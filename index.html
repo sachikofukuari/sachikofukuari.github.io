@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Lotus Garden Portfolio</title>
+  <link rel="preload" href="assets/fonts/1FTV-VIP-Alpha-Brights.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-stage="intro">
+  <!-- Soft pink + drifting white mist fallback behind WebGL -->
+  <div class="bg-fallback" aria-hidden="true"></div>
+
+  <!-- Full-viewport WebGL lotus blossom, bokeh meadow, and random white-pink sky -->
+  <canvas id="lotus-canvas" class="lotus-canvas" aria-hidden="true"></canvas>
+
+  <!-- Graceful static/CSS fallback shown only if WebGL context cannot initialize -->
+  <div id="lotus-svg-fallback" class="lotus-svg-fallback" hidden aria-hidden="true"></div>
+
+  <!-- Soft dark vignette framing viewport borders -->
+  <div class="page-vignette" aria-hidden="true"></div>
+
+  <!-- Persistent top-right display controls -->
+  <div class="utility-dock" role="toolbar" aria-label="Display controls">
+    <button id="btn-motion-toggle" class="util-pill" type="button" aria-label="Pause motion">
+      <svg class="util-icon icon-pause" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <line x1="9" y1="6" x2="9" y2="18"/>
+        <line x1="15" y1="6" x2="15" y2="18"/>
+      </svg>
+      <svg class="util-icon icon-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M8 6.5v11l9.5-5.5L8 6.5Z"/>
+      </svg>
+      <span class="motion-label">Pause motion</span>
+    </button>
+  </div>
+
+  <!-- Closed side-view lotus intro overlay -->
+  <div id="intro-stage" class="intro-stage">
+    <button id="intro-bloom-trigger" class="intro-hitarea" type="button" aria-label="Hello, im Ari — Bloom lotus to enter portfolio">
+      <span class="intro-copy">
+        <span id="intro-greeting" class="intro-greeting" aria-label="Hello, im Ari">Hello, im Ari</span>
+        <span class="bloom-cue">
+          <span id="intro-cue-text">Scroll or click to bloom</span>
+        </span>
+      </span>
+    </button>
+  </div>
+
+  <!-- Multi-view SPA portfolio shell revealed when lotus blooms -->
+  <div id="portfolio-shell" class="portfolio-shell" aria-hidden="true" inert>
+    <main id="portfolio-view" class="portfolio-main" tabindex="-1"></main>
+
+    <nav class="bottom-nav" aria-label="Portfolio sections">
+      <button class="bottom-nav-btn" type="button" data-tab="home" aria-current="page">
+        <span class="nav-pill-bg" aria-hidden="true"></span>
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5.5v-6h-5v6H4a1 1 0 0 1-1-1v-9.5Z"/>
+        </svg>
+        <span>home</span>
+      </button>
+      <button class="bottom-nav-btn" type="button" data-tab="uses">
+        <span class="nav-pill-bg" aria-hidden="true"></span>
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="6" y="3" width="12" height="18" rx="6"/>
+          <line x1="12" y1="7" x2="12" y2="10"/>
+        </svg>
+        <span>uses</span>
+      </button>
+      <button class="bottom-nav-btn" type="button" data-tab="works">
+        <span class="nav-pill-bg" aria-hidden="true"></span>
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="4" width="18" height="16" rx="3"/>
+          <circle cx="8.5" cy="9.5" r="1.5"/>
+          <path d="m21 16-5-5-5 5-3-3-5 5"/>
+        </svg>
+        <span>works</span>
+      </button>
+      <button class="bottom-nav-btn" type="button" data-tab="card">
+        <span class="nav-pill-bg" aria-hidden="true"></span>
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="5" width="18" height="14" rx="2.5"/>
+          <circle cx="8.5" cy="11" r="2"/>
+          <path d="M5.5 16c.8-1.4 2-2 3-2s2.2.6 3 2"/>
+          <line x1="14" y1="10" x2="18.5" y2="10"/>
+          <line x1="14" y1="13.5" x2="17.5" y2="13.5"/>
+        </svg>
+        <span>card</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- Quick-view modal for peripherals & works -->
+  <dialog id="item-dialog" class="item-dialog" aria-labelledby="dialog-title">
+    <div class="dialog-sheet">
+      <div class="dialog-head">
+        <span id="dialog-eyebrow" class="dialog-eyebrow"></span>
+        <button id="dialog-close" class="dialog-close" type="button" aria-label="Close details">×</button>
+      </div>
+      <div id="dialog-body" class="dialog-body"></div>
+    </div>
+  </dialog>
+
+  <!-- Live region for clipboard & view announcements -->
+  <div id="sr-live" class="sr-only" aria-live="polite"></div>
+
+  <!-- Global falling-petal cursor trail across intro + every view -->
+  <canvas id="petal-cursor-canvas" class="petal-cursor-canvas" aria-hidden="true"></canvas>
+
+  <script defer src="data.js"></script>
+  <script defer src="js/lotus-scene.js"></script>
+  <script defer src="js/petal-cursor.js"></script>
+  <script defer src="js/app.js"></script>
+</body>
+</html>
