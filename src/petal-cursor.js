@@ -28,6 +28,11 @@ export function createPetalCursor(canvas, options) {
     }
 
     const reducedMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const isTouchDevice =
+      window.matchMedia("(pointer: coarse)").matches ||
+      window.innerWidth <= 900 ||
+      (navigator.maxTouchPoints > 0 && Math.min(window.innerWidth, window.innerHeight) <= 1024);
+    const cursorInitMs = performance.now();
 
     // Pre-rendered glowing sakura petal sprites for Darker Rose theme
     const darkPalette = [
@@ -342,6 +347,7 @@ export function createPetalCursor(canvas, options) {
     }
 
     function onWindowBlur() {
+      if (isTouchDevice || performance.now() - cursorInitMs < 1500) return;
       windowBlurred = true;
       suspendCursor();
     }

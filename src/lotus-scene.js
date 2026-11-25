@@ -74,6 +74,11 @@ export function createLotusScene(canvas, options) {
       (window.matchMedia("(pointer: coarse)").matches &&
         Math.min(window.innerWidth, window.innerHeight) <= 900);
     const lowEnd = isSmallScreen;
+    const isTouchDevice =
+      window.matchMedia("(pointer: coarse)").matches ||
+      window.innerWidth <= 900 ||
+      (navigator.maxTouchPoints > 0 && Math.min(window.innerWidth, window.innerHeight) <= 1024);
+    const sceneInitMs = performance.now();
 
     const gl = canvas.getContext("webgl", {
       alpha: true,
@@ -135,7 +140,7 @@ export function createLotusScene(canvas, options) {
 
     let sliceTick = performance.now();
     async function yieldSlice() {
-      if (performance.now() - sliceTick < 7) return;
+      if (performance.now() - sliceTick < 14) return;
       if (self.scheduler && typeof self.scheduler.yield === "function") {
         await self.scheduler.yield();
       } else {
@@ -1340,6 +1345,7 @@ export function createLotusScene(canvas, options) {
     let windowBlurred = false;
     let pendingFlyDown = false;
     let hasPaintedOnce = false;
+    let frameTicks = 0;
 
     async function buildScene() {
       const bokehBlurPx = Math.max(6, Math.round(TILE_SIZE * 0.055));
@@ -1722,8 +1728,17 @@ export function createLotusScene(canvas, options) {
       particles.length = 0;
       particleBuf = makeBuffer(packed);
 
+      if (!document.hidden) windowBlurred = false;
       document.body.classList.add("webgl-ready");
       wake();
+      clearTimeout(startupWatchTimer);
+      startupWatchTimer = setTimeout(() => {
+        startupWatchTimer = 0;
+        if (!disposed && !document.hidden && !paused && frameTicks < 5) {
+          windowBlurred = false;
+          resumeScene();
+        }
+      }, 600);
     }
 
     const bgPosLoc = bgGl.getAttribLocation(bgProg, "pos");
@@ -1816,7 +1831,7 @@ export function createLotusScene(canvas, options) {
 
       const pointerActive = now - lastPointerMoveMs < 550;
       const settledOpen = settleMix > 0.975 && bloomTarget === 1 && Math.abs(bloomTarget - bloomMix) < 0.015;
-      const minGap = animating ? 0 : settledOpen ? 45 : pointerActive ? 16 : 33;
+      const minGap = animating ? 0 : settledOpen ? 42 : pointerActive ? 14 : 28;
 
       const gap = now - (lastNow || now - 16);
       if (hasPaintedOnce && !paused && !isReduced && minGap > 0 && gap < minGap) {
@@ -1827,6 +1842,10 @@ export function createLotusScene(canvas, options) {
       const dt = Math.min(0.08, Math.max(0.001, gap * 0.001));
       lastNow = now;
       hasPaintedOnce = true;
+      if (frameTicks < 6) {
+        frameTicks++;
+        if (frameTicks === 5) document.body.dataset.animStarted = "1";
+      }
 
       const bloomRate = bloomTarget > bloomMix ? 2.1 : 0.78;
       const bloomEase = isReduced ? 1 : 1 - Math.exp(-dt * bloomRate);
@@ -2073,8 +2092,16 @@ export function createLotusScene(canvas, options) {
     }
 
     function onWindowBlur() {
+      if (isTouchDevice || performance.now() - sceneInitMs < 1500) return;
       windowBlurred = true;
       suspendScene();
+    }
+
+    function onInteractionWake() {
+      if (windowBlurred && !document.hidden) {
+        windowBlurred = false;
+        resumeScene();
+      }
     }
 
     function onWindowFocus() {
@@ -2098,12 +2125,16 @@ export function createLotusScene(canvas, options) {
     }
 
     window.addEventListener("pointermove", onPointerMove, { passive: true });
+    window.addEventListener("pointerdown", onInteractionWake, { passive: true });
+    window.addEventListener("touchstart", onInteractionWake, { passive: true });
+    window.addEventListener("scroll", onInteractionWake, { passive: true });
     window.addEventListener("pointerleave", onPointerLeave, { passive: true });
     window.addEventListener("blur", onWindowBlur);
     window.addEventListener("focus", onWindowFocus);
     window.addEventListener("pagehide", onPageHide);
     window.addEventListener("pageshow", onPageShow);
     document.addEventListener("visibilitychange", onVisibilityChange);
+    document.addEventListener("prerenderingchange", onVisibilityChange);
     canvas.addEventListener("webglcontextlost", onContextLost);
     reducedMotionMQ.addEventListener("change", wake);
 
@@ -2111,6 +2142,7 @@ export function createLotusScene(canvas, options) {
     ro.observe(canvas);
 
     let flyDownTimer = 0;
+    let startupWatchTimer = 0;
 
     buildScene().catch(() => {
       if (!disposed) triggerFallback();
@@ -2154,15 +2186,20 @@ export function createLotusScene(canvas, options) {
       destroy() {
         disposed = true;
         clearTimeout(flyDownTimer);
+        clearTimeout(startupWatchTimer);
         cancelAnimationFrame(raf);
         ro.disconnect();
         window.removeEventListener("pointermove", onPointerMove);
+        window.removeEventListener("pointerdown", onInteractionWake);
+        window.removeEventListener("touchstart", onInteractionWake);
+        window.removeEventListener("scroll", onInteractionWake);
         window.removeEventListener("pointerleave", onPointerLeave);
         window.removeEventListener("blur", onWindowBlur);
         window.removeEventListener("focus", onWindowFocus);
         window.removeEventListener("pagehide", onPageHide);
         window.removeEventListener("pageshow", onPageShow);
         document.removeEventListener("visibilitychange", onVisibilityChange);
+        document.removeEventListener("prerenderingchange", onVisibilityChange);
         canvas.removeEventListener("webglcontextlost", onContextLost);
         reducedMotionMQ.removeEventListener("change", wake);
         gl.getExtension("WEBGL_lose_context")?.loseContext();

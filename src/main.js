@@ -209,6 +209,12 @@ if (bannerPreloadUrl) {
   }
 }
 
+const isTouchDevice =
+  window.matchMedia("(pointer: coarse)").matches ||
+  window.innerWidth <= 900 ||
+  (navigator.maxTouchPoints > 0 && Math.min(window.innerWidth, window.innerHeight) <= 1024);
+const appInitMs = performance.now();
+
 function setPageInactive(inactive) {
   if (inactive) {
     bodyEl.dataset.pageInactive = "true";
@@ -224,7 +230,12 @@ document.addEventListener("visibilitychange", () => {
   setPageInactive(document.hidden);
   if (!document.hidden) syncDiscordAvatar(false);
 });
-window.addEventListener("blur", () => setPageInactive(true));
+document.addEventListener("prerenderingchange", () => setPageInactive(document.hidden));
+window.addEventListener("blur", () => {
+  if (!isTouchDevice && performance.now() - appInitMs >= 1500) {
+    setPageInactive(true);
+  }
+});
 window.addEventListener("focus", () => setPageInactive(false));
 window.addEventListener("pagehide", () => setPageInactive(true));
 window.addEventListener("pageshow", () => setPageInactive(false));
