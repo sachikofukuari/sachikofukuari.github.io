@@ -5,13 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>Sachiko Fukuari</title>
+  <meta name="description" content="be kind! 💖🌸 — Sachiko Fukuari's personal portfolio.">
+  <meta name="theme-color" content="#f48fb1">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://sachikofukuari.github.io/">
+  <meta property="og:title" content="Sachiko Fukuari (幸子福有)">
+  <meta property="og:description" content="be kind! 💖🌸">
+  <meta property="og:image" content="https://sachikofukuari.github.io/assets/images/banner.jpg?v=6">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Sachiko Fukuari (幸子福有)">
+  <meta name="twitter:description" content="be kind! 💖🌸">
+  <meta name="twitter:image" content="https://sachikofukuari.github.io/assets/images/banner.jpg?v=6">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌸</text></svg>">
   <link rel="preload" href="assets/fonts/1FTV-VIP-Alpha-Brights.ttf" as="font" type="font/ttf" crossorigin>
-  <link rel="preload" href="assets/images/banner.jpg?v=5" as="image">
+  <link rel="preload" href="assets/images/banner.jpg?v=6" as="image">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&display=swap">
-  <link rel="stylesheet" href="styles.css?v=5">
+  <link rel="stylesheet" href="styles.css?v=6">
 </head>
 <body data-stage="intro">
   <!-- Soft pink + drifting white mist fallback behind WebGL -->
@@ -106,6 +117,14 @@
     </button>
   </nav>
 
+  <!-- Minimal floating mini-player shown when song plays off the Home tab -->
+  <div id="mini-player" class="mini-player" hidden aria-label="Now playing">
+    <button id="mini-player-toggle" class="mini-player-btn" type="button" aria-label="Pause song"></button>
+    <span class="eq-bars" aria-hidden="true"><i></i><i></i><i></i></span>
+    <button id="mini-player-open-home" class="mini-player-title" type="button" title="Jump to Home player"></button>
+    <button id="mini-player-close" class="mini-player-close" type="button" aria-label="Stop and hide mini player">×</button>
+  </div>
+
   <!-- Quick-view modal for peripherals & works -->
   <dialog id="item-dialog" class="item-dialog" aria-labelledby="dialog-title">
     <div class="dialog-sheet">
@@ -128,9 +147,9 @@
     <div id="yt-audio-player"></div>
   </div>
 
-  <script defer src="data.js?v=5"></script>
-  <script defer src="js/lotus-scene.js?v=5"></script>
-  <script defer src="js/petal-cursor.js?v=5"></script>
-  <script defer src="js/app.js?v=5"></script>
+  <script defer src="data.js?v=6"></script>
+  <script defer src="js/lotus-scene.js?v=6"></script>
+  <script defer src="js/petal-cursor.js?v=6"></script>
+  <script defer src="js/app.js?v=6"></script>
 </body>
 </html>

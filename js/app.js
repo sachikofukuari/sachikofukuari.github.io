@@ -358,6 +358,17 @@
   let lastAvatarFetchMs = 0;
 
   const profileCfg = DATA.profile || {};
+  const WORKER_URL = String(DATA.backend?.workerUrl || "").trim().replace(/\/+$/, "");
+
+  function resolveWorkerHttp(path) {
+    return WORKER_URL ? `${WORKER_URL}${path}` : null;
+  }
+
+  function resolveWorkerWs(path) {
+    if (!WORKER_URL) return null;
+    return `${WORKER_URL.replace(/^http/i, "ws")}${path}`;
+  }
+
   function resolveAvatarSrc() {
     return liveDiscordAvatarUrl || profileCfg.avatarFallback || profileCfg.avatarImage || null;
   }
@@ -405,6 +416,24 @@
     const now = Date.now();
     if (!force && now - lastAvatarFetchMs < 60000) return;
     lastAvatarFetchMs = now;
+
+    const workerAvatarEndpoint = resolveWorkerHttp(`/discord-avatar/${rawId}`);
+    if (workerAvatarEndpoint) {
+      try {
+        const res = await fetch(workerAvatarEndpoint, { cache: "no-store" });
+        if (res.ok) {
+          const json = await res.json();
+          const avatarHash = json?.avatar ?? json?.data?.avatar;
+          const directUrl = json?.avatarUrl || (avatarHash !== undefined ? buildDiscordCdnUrl(rawId, avatarHash) : null);
+          if (directUrl) {
+            applyLiveAvatarToDom(directUrl);
+            return;
+          }
+        }
+      } catch {
+        // Fall back to static proxy endpoints below
+      }
+    }
 
     try {
       const res = await fetch(`https://japi.rest/discord/v1/user/${rawId}`, { cache: "no-store" });
@@ -455,6 +484,21 @@
     introTrigger.setAttribute("aria-label", `${greetPrefix}${DATA.intro.lotusAriaLabel}`);
   }
   syncDiscordAvatar(true);
+
+  // Pre-decode banner on idle so opening the portfolio card never stutters on JPEG decode
+  const bannerPreloadUrl = profileCfg.banner || profileCfg.bannerImage;
+  if (bannerPreloadUrl) {
+    const warmBanner = () => {
+      const img = new Image();
+      img.src = bannerPreloadUrl;
+      img.decode?.().catch(() => {});
+    };
+    if ("requestIdleCallback" in window) {
+      requestIdleCallback(warmBanner, { timeout: 1200 });
+    } else {
+      setTimeout(warmBanner, 750);
+    }
+  }
 
   // --------------------------------------------------------------------------
   // Interactive Cursor-Driven "Hello, im Ari" Greeting Motion
@@ -810,10 +854,18 @@
             <span>soon</span>
           </div>
           <h3 class="work-title placeholder-title">${esc(emptyText)}</h3>
-          <p class="work-summary">projects &amp; creative pieces will appear here once added in data.js</p>
         </div>
       </div>
     `;
+  }
+
+  function splitDisplayName(p) {
+    const rawName = String(p.name || "Your Name").trim();
+    const rawSub = String(p.subName || "").trim();
+    if (rawSub) return { main: rawName, sub: rawSub };
+    const m = rawName.match(/^(.*?)\s*(\([^)]+\))$/);
+    if (m) return { main: m[1].trim(), sub: m[2].trim() };
+    return { main: rawName, sub: "" };
   }
 
   function renderHeroCardHtml() {
@@ -824,6 +876,7 @@
       : getDefaultBannerSvg();
     const avatarHtml = renderAvatarMarkup(p.name || "Profile avatar");
 
+    const { main: nameMain, sub: nameSub } = splitDisplayName(p);
     const tagValue = p.tag || p.handle;
     const descValue = p.description ?? p.bio ?? "";
     const contactLabel = p.contactButtonLabel || p.primaryAction?.label || "contact";
@@ -871,8 +924,8 @@
                 <div class="hero-avatar-frame" data-avatar-slot="hero">${avatarHtml}</div>
                 <div class="hero-name-block">
                   <h1 id="view-heading" class="hero-name" tabindex="-1">
-                    ${esc(p.name || "Your Name")}
-                    ${p.sparkle ? `<span class="hero-sparkle" aria-hidden="true">${esc(p.sparkle)}</span>` : ""}
+                    <span class="hero-name-main">${esc(nameMain)}${p.sparkle ? ` <span class="hero-sparkle" aria-hidden="true">${esc(p.sparkle)}</span>` : ""}</span>
+                    ${nameSub ? `<span class="hero-name-sub">${esc(nameSub)}</span>` : ""}
                   </h1>
                   ${metaParts.length ? `<p class="hero-meta">${metaParts.map((m) => `<span>${esc(m)}</span>`).join('<span aria-hidden="true">·</span>')}</p>` : ""}
                 </div>
@@ -959,6 +1012,20 @@
     return "";
   }
 
+  function parseStartAtSeconds(rawVal) {
+    if (typeof rawVal === "number" && Number.isFinite(rawVal)) {
+      return Math.max(0, Math.floor(rawVal));
+    }
+    const str = String(rawVal || "").trim();
+    if (!str) return 0;
+    if (/^\d+$/.test(str)) return Math.max(0, parseInt(str, 10));
+    const parts = str.split(":").map((n) => parseInt(n, 10));
+    if (parts.some((n) => Number.isNaN(n) || n < 0)) return 0;
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    return 0;
+  }
+
   function getMusicConfig() {
     const raw = DATA.music || DATA.homeWidgets?.favoriteSong;
     if (!raw) return null;
@@ -971,9 +1038,14 @@
     const openUrl =
       raw.musicUrl ||
       (videoId ? `https://music.youtube.com/watch?v=${videoId}` : url);
+    const startAtSec = parseStartAtSeconds(raw.startAt);
+    const defaultVolRaw = raw.defaultVolume ?? 50;
+    const defaultVolume = Math.max(0, Math.min(100, Number.isFinite(Number(defaultVolRaw)) ? Math.round(Number(defaultVolRaw)) : 50));
     return {
       heading: raw.heading || "favourite song right now",
       videoId,
+      startAtSec,
+      defaultVolume,
       title: raw.title || "",
       artist: raw.artist || "",
       album: raw.album || "",
@@ -982,17 +1054,22 @@
     };
   }
 
+  const initialMusicCfg = getMusicConfig();
   const ytCtrl = {
     apiRequested: false,
     player: null,
-    videoId: "",
+    videoId: initialMusicCfg?.videoId || "",
+    startAtSec: initialMusicCfg?.startAtSec || 0,
+    appliedInitialStart: false,
+    hasStarted: false,
+    miniDismissed: false,
     ready: false,
     playing: false,
     pendingPlay: false,
     seeking: false,
     duration: 0,
-    currentTime: 0,
-    volume: 70,
+    currentTime: initialMusicCfg?.startAtSec || 0,
+    volume: initialMusicCfg?.defaultVolume ?? 50,
     muted: false,
     pollTimer: 0,
   };
@@ -1003,6 +1080,35 @@
     inputEl.style.setProperty("--pct", `${clamped.toFixed(2)}%`);
   }
 
+  function syncMiniPlayerDom() {
+    const miniEl = document.getElementById("mini-player");
+    const miniBtn = document.getElementById("mini-player-toggle");
+    const miniTitle = document.getElementById("mini-player-open-home");
+    const eqBars = miniEl?.querySelector(".eq-bars");
+    if (!miniEl) return;
+
+    const showMini =
+      stage === "open" &&
+      activeTab !== "home" &&
+      ytCtrl.hasStarted &&
+      !ytCtrl.miniDismissed;
+
+    miniEl.hidden = !showMini;
+    if (!showMini) return;
+
+    const music = getMusicConfig();
+    if (miniBtn) {
+      miniBtn.innerHTML = ytCtrl.playing ? getSmallIconSvg("pause") : getSmallIconSvg("play");
+      miniBtn.setAttribute("aria-label", ytCtrl.playing ? "Pause song" : "Play song");
+    }
+    if (eqBars) {
+      eqBars.classList.toggle("is-active", ytCtrl.playing);
+    }
+    if (miniTitle && music) {
+      miniTitle.textContent = music.title || "Favourite song";
+    }
+  }
+
   function syncYtControlsDom() {
     const btnPlay = document.getElementById("btn-yt-play");
     const seekEl = document.getElementById("yt-seek");
@@ -1010,11 +1116,15 @@
     const durEl = document.getElementById("yt-dur-time");
     const btnMute = document.getElementById("btn-yt-mute");
     const volEl = document.getElementById("yt-volume");
+    const widgetEq = document.getElementById("yt-widget-eq");
 
     if (btnPlay) {
       btnPlay.innerHTML = ytCtrl.playing ? getSmallIconSvg("pause") : getSmallIconSvg("play");
       btnPlay.setAttribute("aria-label", ytCtrl.playing ? "Pause song" : "Play song");
       btnPlay.classList.toggle("is-playing", ytCtrl.playing);
+    }
+    if (widgetEq) {
+      widgetEq.classList.toggle("is-active", ytCtrl.playing);
     }
 
     if (curEl && !ytCtrl.seeking) {
@@ -1037,6 +1147,27 @@
       const displayVol = ytCtrl.muted ? 0 : ytCtrl.volume;
       volEl.value = String(displayVol);
       setRangeFill(volEl, displayVol);
+    }
+    syncMiniPlayerDom();
+  }
+
+  function toggleYtPlayback() {
+    ensureYtPlayerLoaded();
+    if (!ytCtrl.ready || !ytCtrl.player) {
+      ytCtrl.pendingPlay = !ytCtrl.pendingPlay;
+      return;
+    }
+    try {
+      if (ytCtrl.playing) ytCtrl.player.pauseVideo();
+      else {
+        if (!ytCtrl.appliedInitialStart && ytCtrl.startAtSec > 0) {
+          ytCtrl.appliedInitialStart = true;
+          ytCtrl.player.seekTo(ytCtrl.startAtSec, true);
+        }
+        ytCtrl.player.playVideo();
+      }
+    } catch {
+      // Ignore transient YT state errors
     }
   }
 
@@ -1085,6 +1216,9 @@
       rel: 0,
       playsinline: 1,
     };
+    if (ytCtrl.startAtSec > 0) {
+      playerVars.start = ytCtrl.startAtSec;
+    }
     if (window.location.protocol.startsWith("http")) {
       playerVars.origin = window.location.origin;
     }
@@ -1105,6 +1239,10 @@
               if (dur > 0) ytCtrl.duration = dur;
               if (ytCtrl.pendingPlay) {
                 ytCtrl.pendingPlay = false;
+                if (ytCtrl.startAtSec > 0 && !ytCtrl.appliedInitialStart) {
+                  ytCtrl.appliedInitialStart = true;
+                  e.target.seekTo(ytCtrl.startAtSec, true);
+                }
                 e.target.playVideo();
               }
             } catch {
@@ -1118,13 +1256,33 @@
             if (!st) return;
             if (e.data === st.PLAYING) {
               ytCtrl.playing = true;
+              ytCtrl.hasStarted = true;
+              ytCtrl.miniDismissed = false;
               const dur = Number(ytCtrl.player?.getDuration?.() || 0);
               if (dur > 0) ytCtrl.duration = dur;
+              if (!ytCtrl.appliedInitialStart && ytCtrl.startAtSec > 0) {
+                ytCtrl.appliedInitialStart = true;
+                const cur = Number(ytCtrl.player?.getCurrentTime?.() || 0);
+                if (cur < ytCtrl.startAtSec - 2) {
+                  try {
+                    ytCtrl.player.seekTo(ytCtrl.startAtSec, true);
+                    ytCtrl.currentTime = ytCtrl.startAtSec;
+                  } catch {
+                    // Ignore
+                  }
+                }
+              }
             } else if (e.data === st.PAUSED) {
               ytCtrl.playing = false;
             } else if (e.data === st.ENDED) {
-              ytCtrl.playing = false;
-              ytCtrl.currentTime = ytCtrl.duration;
+              ytCtrl.appliedInitialStart = true;
+              ytCtrl.currentTime = 0;
+              try {
+                ytCtrl.player?.seekTo?.(0, true);
+                ytCtrl.player?.playVideo?.();
+              } catch {
+                ytCtrl.playing = false;
+              }
             }
             syncYtControlsDom();
             syncYtPolling();
@@ -1247,7 +1405,7 @@
   }
 
   function connectPulsoidSocket() {
-    const wsUrl = vitalsCfg.pulsoidWsUrl;
+    const wsUrl = resolveWorkerWs("/pulsoid") || vitalsCfg.pulsoidWsUrl;
     if (!wsUrl || !isVitalsNeeded() || vitalsState.isConnecting) return;
     if (vitalsState.ws && (vitalsState.ws.readyState === WebSocket.OPEN || vitalsState.ws.readyState === WebSocket.CONNECTING)) {
       return;
@@ -1406,7 +1564,7 @@
           song
             ? `<div class="widget-card yt-music-widget">
                 <div class="widget-eyebrow-row">
-                  <span class="widget-eyebrow-label">${getSmallIconSvg("ytMusic")}<span>${esc(song.heading)}</span></span>
+                  <span class="widget-eyebrow-label">${getSmallIconSvg("ytMusic")}<span>${esc(song.heading)}</span><span id="yt-widget-eq" class="eq-bars${ytCtrl.playing ? " is-active" : ""}" aria-hidden="true"><i></i><i></i><i></i></span></span>
                   <a class="widget-ext-link" href="${esc(songHref)}"${ext ? ' target="_blank" rel="noopener noreferrer"' : ""} aria-label="Open in YouTube Music">↗</a>
                 </div>
                 <div class="yt-music-row">
@@ -1575,6 +1733,7 @@
     const p = DATA.profile || {};
     const lk = DATA.contact || DATA.links || {};
     const avatarHtml = renderAvatarMarkup(p.name || "Avatar");
+    const { main: nameMain, sub: nameSub } = splitDisplayName(p);
     const tagVal = p.tag || p.handle;
     const descVal = lk.description || lk.cardBio || p.description || p.bio || "";
     const subParts = [tagVal, p.pronouns].filter(Boolean);
@@ -1583,7 +1742,7 @@
       <div class="portfolio-view-inner">
         <div class="section-head-centered">
           <h1 id="view-heading" class="section-title" tabindex="-1">${esc(lk.heading || "Contact")}</h1>
-          <p class="section-subtitle">${esc(p.name || "")}${tagVal ? ` · ${esc(tagVal)}` : ""}</p>
+          <p class="section-subtitle">${esc(nameMain)}${nameSub ? ` ${esc(nameSub)}` : ""}${tagVal ? ` · ${esc(tagVal)}` : ""}</p>
         </div>
 
         <div class="card-layout">
@@ -1591,7 +1750,7 @@
             <div class="hero-identity" style="align-items:center;">
               <div class="hero-avatar-frame" data-avatar-slot="contact" style="margin-top:0;width:68px;height:68px;">${avatarHtml}</div>
               <div>
-                <h2 class="hero-name" style="font-size:22px;">${esc(p.name || "")}${p.sparkle ? ` <span class="hero-sparkle" aria-hidden="true">${esc(p.sparkle)}</span>` : ""}</h2>
+                <h2 class="hero-name" style="font-size:20px;"><span class="hero-name-main">${esc(nameMain)}${p.sparkle ? ` <span class="hero-sparkle" aria-hidden="true">${esc(p.sparkle)}</span>` : ""}</span>${nameSub ? `<span class="hero-name-sub">${esc(nameSub)}</span>` : ""}</h2>
                 ${subParts.length ? `<p class="hero-meta">${esc(subParts.join(" · "))}</p>` : ""}
               </div>
             </div>
@@ -1694,7 +1853,45 @@
     }
   }
 
-  function openItemDialog(triggerEl, eyebrow, visualHtml, title, meta, notes, url) {
+  function renderWorkDialogMedia(work) {
+    if (work.videoUrl) {
+      const ytId = extractYouTubeId(work.videoUrl);
+      if (ytId) {
+        return {
+          isVideo: true,
+          galleryHtml: "",
+          visualHtml: `<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(ytId)}?rel=0" title="${esc(work.title)}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe>`,
+        };
+      }
+      const safeVid = safeUrl(work.videoUrl);
+      return {
+        isVideo: true,
+        galleryHtml: "",
+        visualHtml: `<video src="${esc(safeVid)}" controls playsinline preload="metadata"></video>`,
+      };
+    }
+
+    const gallery = Array.isArray(work.gallery) ? work.gallery.filter(Boolean) : [];
+    const primaryImg = work.image || gallery[0] || "";
+    const visualHtml = primaryImg
+      ? `<img id="dialog-main-img" src="${esc(primaryImg)}" alt="${esc(work.title)}" data-fallback="true" data-kind="work" data-seed="${esc(work.gradientSeed || 1)}">`
+      : getWorkCoverSvg(work.gradientSeed || 1);
+
+    const thumbsList = work.image && gallery.length && !gallery.includes(work.image)
+      ? [work.image, ...gallery]
+      : gallery;
+    const galleryHtml = thumbsList.length > 1
+      ? `<div class="dialog-gallery-thumbs" role="group" aria-label="Project gallery">${thumbsList
+          .map(
+            (src, idx) => `<button class="dialog-thumb-btn${idx === 0 ? " is-active" : ""}" type="button" data-gallery-src="${esc(src)}" aria-label="View image ${idx + 1}"><img src="${esc(src)}" alt=""></button>`
+          )
+          .join("")}</div>`
+      : "";
+
+    return { isVideo: false, visualHtml, galleryHtml };
+  }
+
+  function openItemDialog(triggerEl, eyebrow, visualHtml, title, meta, notes, url, mediaOpts = {}) {
     if (!itemDialog || !dialogBody || !dialogEyebrow) return;
     lastTriggerEl = triggerEl;
     dialogEyebrow.textContent = eyebrow;
@@ -1704,7 +1901,8 @@
     const ext = isExternalUrl(href);
 
     dialogBody.innerHTML = `
-      <div class="dialog-visual">${visualHtml}</div>
+      <div class="dialog-visual${mediaOpts.isVideo ? " dialog-visual-video" : ""}">${visualHtml}</div>
+      ${mediaOpts.galleryHtml || ""}
       <h2 id="dialog-title" class="dialog-title">${esc(title)}</h2>
       <p class="dialog-meta">${esc(meta)}</p>
       <p class="dialog-notes">${esc(notes)}</p>
@@ -1719,6 +1917,14 @@
       }
     `;
     attachImageFallbacks(dialogBody);
+    dialogBody.querySelectorAll("[data-gallery-src]").forEach((thumbBtn) => {
+      thumbBtn.addEventListener("click", () => {
+        const mainImg = document.getElementById("dialog-main-img");
+        if (mainImg) mainImg.setAttribute("src", thumbBtn.dataset.gallerySrc || "");
+        dialogBody.querySelectorAll("[data-gallery-src]").forEach((b) => b.classList.remove("is-active"));
+        thumbBtn.classList.add("is-active");
+      });
+    });
     dialogBody.querySelector("[data-dialog-tab]")?.addEventListener("click", (e) => {
       e.preventDefault();
       const t = e.currentTarget.dataset.dialogTab;
@@ -1783,17 +1989,16 @@
       card.addEventListener("click", () => {
         const work = getWorksList().find((w) => w.id === card.dataset.workId);
         if (!work) return;
-        const visualHtml = work.image
-          ? `<img src="${esc(work.image)}" alt="${esc(work.title)}" data-fallback="true" data-kind="work" data-seed="${esc(work.gradientSeed || 1)}">`
-          : getWorkCoverSvg(work.gradientSeed || 1);
+        const media = renderWorkDialogMedia(work);
         openItemDialog(
           card,
           `${work.category || "work"}${work.year ? ` · ${work.year}` : ""}`,
-          visualHtml,
+          media.visualHtml,
           work.title,
           `${work.status || ""}${work.tags?.length ? ` · ${work.tags.join(" · ")}` : ""}`,
           work.description || work.summary || "",
-          work.url
+          work.url,
+          media
         );
       });
     });
@@ -1813,19 +2018,7 @@
     const btnMute = document.getElementById("btn-yt-mute");
     const volEl = document.getElementById("yt-volume");
 
-    btnPlay?.addEventListener("click", () => {
-      ensureYtPlayerLoaded();
-      if (!ytCtrl.ready || !ytCtrl.player) {
-        ytCtrl.pendingPlay = !ytCtrl.pendingPlay;
-        return;
-      }
-      try {
-        if (ytCtrl.playing) ytCtrl.player.pauseVideo();
-        else ytCtrl.player.playVideo();
-      } catch {
-        // Ignore player state errors
-      }
-    });
+    btnPlay?.addEventListener("click", toggleYtPlayback);
 
     seekEl?.addEventListener("input", () => {
       ytCtrl.seeking = true;
@@ -1932,40 +2125,10 @@
       history.pushState(null, "", `#${targetTab}`);
     }
 
-    const applyUpdate = () => {
-      renderActiveView();
-      updateNavState();
-      resetPortfolioScroll();
-    };
-
-    if (activeViewTransition && typeof activeViewTransition.skipTransition === "function") {
-      try {
-        activeViewTransition.skipTransition();
-      } catch {
-        // Ignore stale view transition state
-      }
-      activeViewTransition = null;
-    }
-
-    if (!document.startViewTransition || coarsePointerMQ.matches || reducedMotionMQ.matches) {
-      applyUpdate();
-      focusViewHeading();
-      return;
-    }
-
-    try {
-      const transition = document.startViewTransition(applyUpdate);
-      activeViewTransition = transition;
-      transition.finished
-        .catch(() => {})
-        .finally(() => {
-          if (activeViewTransition === transition) activeViewTransition = null;
-          focusViewHeading();
-        });
-    } catch {
-      applyUpdate();
-      focusViewHeading();
-    }
+    renderActiveView();
+    updateNavState();
+    resetPortfolioScroll();
+    focusViewHeading();
   }
 
   navButtons.forEach((btn) => {
@@ -2031,7 +2194,11 @@
     renderActiveView();
     updateNavState();
     resetGreetingMotion();
-    ensureYtPlayerLoaded();
+
+    // Defer YouTube API injection until after the lotus bloom animation settles smoothly
+    setTimeout(() => {
+      if (stage === "open") ensureYtPlayerLoaded();
+    }, 1650);
 
     setTimeout(() => {
       if (stage === "open") focusViewHeading();
@@ -2045,6 +2212,7 @@
     stage = "intro";
     syncVitalsLifecycle();
     syncYtPolling();
+    syncMiniPlayerDom();
     bodyEl.dataset.stage = "intro";
     portfolioShell.inert = true;
     portfolioShell.setAttribute("aria-hidden", "true");
@@ -2056,7 +2224,7 @@
     resetPortfolioScroll();
 
     lotusScene?.setBloom(false);
-    measureGreetingChars();
+    requestAnimationFrame(() => measureGreetingChars());
 
     setTimeout(() => {
       if (stage === "intro") introTrigger?.focus({ preventScroll: true });
@@ -2144,21 +2312,63 @@
   );
 
   window.addEventListener("keydown", (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const tagName = document.activeElement?.tagName;
+    if (tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT" || document.activeElement?.isContentEditable) {
+      return;
+    }
+
     if (stage === "intro" && !transitionLocked && (e.key === "ArrowDown" || e.key === "PageDown")) {
       e.preventDefault();
       openPortfolio();
+      return;
+    }
+
+    if (stage === "open") {
+      if (e.key === "Escape" && !itemDialog?.open) {
+        closeToIntro();
+        return;
+      }
+      if (!itemDialog?.open) {
+        const keyMap = { 1: "home", 2: "tools", 3: "works", 4: "contact" };
+        if (keyMap[e.key]) {
+          e.preventDefault();
+          navigateTo(keyMap[e.key]);
+          return;
+        }
+        if (e.code === "Space" && !document.activeElement?.closest?.("button, a, [role='button']")) {
+          e.preventDefault();
+          toggleYtPlayback();
+        }
+      }
     }
   });
 
   // --------------------------------------------------------------------------
-  // Item Dialog Dismissal & Focus Return
+  // Mini-Player Controls & Item Dialog Dismissal
   // --------------------------------------------------------------------------
+
+  document.getElementById("mini-player-toggle")?.addEventListener("click", toggleYtPlayback);
+  document.getElementById("mini-player-open-home")?.addEventListener("click", () => {
+    if (stage === "open") navigateTo("home");
+  });
+  document.getElementById("mini-player-close")?.addEventListener("click", () => {
+    ytCtrl.miniDismissed = true;
+    ytCtrl.hasStarted = false;
+    try {
+      ytCtrl.player?.pauseVideo?.();
+    } catch {
+      // Ignore
+    }
+    syncMiniPlayerDom();
+  });
 
   dialogClose?.addEventListener("click", () => itemDialog?.close());
   itemDialog?.addEventListener("click", (e) => {
     if (e.target === itemDialog) itemDialog.close();
   });
   itemDialog?.addEventListener("close", () => {
+    if (dialogBody) dialogBody.innerHTML = "";
     lastTriggerEl?.focus?.();
     lastTriggerEl = null;
   });
@@ -2166,4 +2376,5 @@
   // Initial sync
   syncMotionUi();
   updateNavState();
+  syncMiniPlayerDom();
 })();

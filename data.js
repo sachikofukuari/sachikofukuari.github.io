@@ -3,9 +3,10 @@
  * PORTFOLIO CONTENT CONFIGURATION (EDIT HERE!)
  * ============================================================================
  * Everything you normally update lives in this one file:
+ * - Optional Cloudflare Worker backend URL (1-line upgrade)
  * - Intro text
- * - Profile (name, tag, description, banner, Discord avatar, contact button)
- * - Favourite song (YouTube / YouTube Music link, title, artist, album)
+ * - Profile (name, subName, tag, description, banner, Discord avatar)
+ * - Favourite song (YouTube URL, start time, default volume, title, artist)
  * - Live vitals (Pulsoid heart rate + local time)
  * - Tools (Software & Peripherals — leave [] to show "to be updated")
  * - Works (leave [] to show a clean "to be updated" example card)
@@ -15,6 +16,13 @@
  */
 
 window.PORTFOLIO_DATA = {
+  // 0. OPTIONAL BACKEND WORKER (1-LINE UPGRADE)
+  // Leave "" for 100% static GitHub Pages. Set your Cloudflare Worker URL later
+  // (e.g. "https://portfolio-api.yourname.workers.dev") to proxy Discord & Pulsoid.
+  backend: {
+    workerUrl: "",
+  },
+
   // 1. LANDING / INTRO SCREEN
   intro: {
     greeting: "Hello, im Ari",
@@ -28,10 +36,11 @@ window.PORTFOLIO_DATA = {
 
   // 2. PROFILE CARD (HOME PAGE)
   profile: {
-    name: "Sachiko Fukuari (幸子福有)",
+    name: "Sachiko Fukuari",
+    subName: "(幸子福有)",
     tag: "@sachikofukuari",
     description: "be kind! 💖🌸 ",
-    banner: "assets/images/banner.jpg?v=5",
+    banner: "assets/images/banner.jpg?v=6",
     // Your Discord User ID (auto-syncs your current Discord profile picture)
     discordUserId: "732043268946133133",
     avatarFallback: "https://cdn.discordapp.com/avatars/732043268946133133/c232585fd1847e1c3666537a61429aa1.webp?size=256",
@@ -40,10 +49,12 @@ window.PORTFOLIO_DATA = {
 
   // 3. FAVOURITE SONG WIDGET (LEFT HOME WIDGET)
   // Paste any YouTube / youtu.be / YouTube Music URL in `youtubeUrl`.
-  // Cover thumbnail auto-loads from YouTube unless you set `coverImage`.
+  // `startAt` supports "3:00" (mm:ss) or seconds (e.g. 180). `defaultVolume` is 0-100.
   music: {
     heading: "favourite song right now",
     youtubeUrl: "https://youtu.be/6RWCiktXFfI?si=29Jsj7z8XsWH83Zh",
+    startAt: "3:00",
+    defaultVolume: 50,
     title: "LK Cứ Trao Đi, Chưa Bao Giờ",
     artist: "Hà Anh Tuấn ft. Thu Phương",
     album: "Sketch a Rose",
@@ -191,6 +202,8 @@ window.PORTFOLIO_DATA = {
         year: "2026",
         status: "released",
         image: "", // optional: "assets/images/project-1.jpg"
+        gallery: [], // optional: ["assets/images/p1-1.jpg", "assets/images/p1-2.jpg"]
+        videoUrl: "", // optional: YouTube URL or "assets/videos/demo.mp4"
         description: "Short summary shown on the card and popup modal.",
         tags: ["Photoshop", "Illustrator"],
         url: "https://example.com",
@@ -206,7 +219,6 @@ window.PORTFOLIO_DATA = {
     items: [
       { label: "GitHub", sublabel: "sachikofukuari", url: "https://github.com/sachikofukuari", icon: "github" },
       { label: "Discord", sublabel: "@sachikofukuari", url: "https://discord.com/", icon: "discord" },
-      { label: "Tools & Setup", sublabel: "Software, coding tools, and peripherals", url: "#tools", icon: "keyboard" },
     ],
   },
 };

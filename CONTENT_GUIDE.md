@@ -8,12 +8,13 @@ All editable content lives in **[data.js](data.js)**. Images go in **[assets/ima
 
 | What to change | Where in `data.js` | Notes |
 | --- | --- | --- |
+| Optional Cloudflare Worker | `backend.workerUrl` | Leave `""` for 100% static GitHub Pages; paste your Worker URL later for a 1-line backend upgrade |
 | Tab title | `index.html` `<title>` | Currently `Sachiko Fukuari` with 🌸 favicon |
 | Intro greeting / cue | `intro.greeting`, `intro.cue` | Shown above the closed lotus |
-| Display name, tag, bio | `profile.name`, `profile.tag`, `profile.description` | Shown on Home & Contact |
-| Banner image | `profile.banner` | Put image in `assets/images/` and point here (or bump `?v=6` after replacing `banner.jpg`) |
+| Display name, subtitle, tag, bio | `profile.name`, `profile.subName`, `profile.tag`, `profile.description` | `subName` renders cleanly on its own line below `name` |
+| Banner image | `profile.banner` | Put image in `assets/images/` and point here (or bump `?v=7` after replacing `banner.jpg`) |
 | Profile picture | `profile.discordUserId` | Automatically syncs your live Discord avatar |
-| Favourite song widget | `music.youtubeUrl`, `title`, `artist`, `album` | Paste any `youtu.be/...`, `youtube.com/watch?v=...`, or `music.youtube.com/watch?v=...` link |
+| Favourite song widget | `music.youtubeUrl`, `startAt`, `defaultVolume`, `title`, `artist`, `album` | Paste any YouTube URL; `startAt` accepts `"3:00"` or seconds; `defaultVolume` is `0–100` |
 | Vitals offline message | `vitals.offlineNote` | Defaults to `"monitor not on right now"` |
 | Software tools | `tools.software` | Add/remove objects in the array |
 | Peripherals | `tools.peripherals` | Empty `[]` displays `"to be updated"` |
@@ -53,6 +54,8 @@ Inside `works.items` in `data.js`, copy and paste an object:
   year: "2026",
   status: "released",
   image: "assets/images/work-1.jpg", // or "" for pastel gradient cover
+  gallery: ["assets/images/work-1a.jpg", "assets/images/work-1b.jpg"], // optional multi-image gallery
+  videoUrl: "", // optional YouTube URL or MP4 path
   description: "Brand identity crafted with Illustrator and InDesign.",
   tags: ["Illustrator", "InDesign"],
   url: "https://example.com",
