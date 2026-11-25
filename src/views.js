@@ -496,3 +496,4 @@ export function renderContactView({ data, avatarSrc, loc, uiStr }) {
     </div>
   `;
 }
+

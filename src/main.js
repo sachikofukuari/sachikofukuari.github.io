@@ -707,3 +707,4 @@ document.getElementById("mini-player-close")?.addEventListener("click", musicCtr
 applyLanguageUi(false);
 updateNavState();
 musicCtrl.syncMiniPlayerDom();
+

@@ -149,3 +149,4 @@ export function buildDiscordCdnUrl(id, avatarHash) {
     return "https://cdn.discordapp.com/embed/avatars/0.png";
   }
 }
+

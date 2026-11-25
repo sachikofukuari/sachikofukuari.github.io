@@ -409,3 +409,4 @@ export function createPetalCursor(canvas, options) {
       },
     };
   }
+

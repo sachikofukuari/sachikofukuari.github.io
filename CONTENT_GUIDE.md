@@ -65,3 +65,4 @@ Inside `works.items` in `data.js`, copy and paste an object:
 
 > Filter tabs on **Works** appear automatically once you add items!
 > Leaving `tools.peripherals` or `works.items` empty (`[]`) shows a clean **"to be updated"** placeholder card.
+

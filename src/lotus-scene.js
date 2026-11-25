@@ -1981,3 +1981,4 @@ export function createLotusScene(canvas, options) {
       },
     };
   }
+
