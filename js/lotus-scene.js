@@ -1592,11 +1592,10 @@
         Math.abs(settleTarget - settleMix) > 0.004;
 
       const pointerActive = now - lastPointerMoveMs < 550;
-      const settledOpen = !animating && settleMix > 0.992 && bloomTarget === 1;
       const minGap = animating ? 0 : pointerActive ? 14 : 33;
 
       const gap = now - (lastNow || now - 16);
-      if (hasPaintedOnce && !paused && !isReduced && !settledOpen && minGap > 0 && gap < minGap) {
+      if (hasPaintedOnce && !paused && !isReduced && minGap > 0 && gap < minGap) {
         wake();
         return;
       }
@@ -1778,7 +1777,7 @@
         Math.abs(flyTarget - flyMix) > 0.002 ||
         Math.abs(settleTarget - settleMix) > 0.002;
 
-      if (!paused && !isBackgrounded() && !settledOpen && (!isReduced || settling)) {
+      if (!paused && !isBackgrounded() && (!isReduced || settling)) {
         wake();
       }
     }

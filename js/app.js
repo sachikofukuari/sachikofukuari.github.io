@@ -198,6 +198,9 @@
       heart: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 20.6s-7.4-4.7-9.6-9.1C.8 8.3 2.4 4.6 5.9 3.9c2.1-.4 4.1.5 5.3 2.1.3.4.9.4 1.2 0 1.2-1.6 3.2-2.5 5.3-2.1 3.5.7 5.1 4.4 3.5 7.6-2.2 4.4-9.2 9.1-9.2 9.1Z"/></svg>',
       clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.2 14"/></svg>',
       play: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8.5 6.3v11.4l9.6-5.7-9.6-5.7Z"/></svg>',
+      pause: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="6" width="3.5" height="12" rx="1"/><rect x="13.5" y="6" width="3.5" height="12" rx="1"/></svg>',
+      volumeOn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>',
+      volumeMuted: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="22" y1="9" x2="16" y2="15"/><line x1="16" y1="9" x2="22" y2="15"/></svg>',
       close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>',
     };
     return icons[name] || icons.sparkle;
@@ -354,8 +357,9 @@
   let liveDiscordAvatarUrl = null;
   let lastAvatarFetchMs = 0;
 
+  const profileCfg = DATA.profile || {};
   function resolveAvatarSrc() {
-    return liveDiscordAvatarUrl || DATA.profile?.avatarImage || null;
+    return liveDiscordAvatarUrl || profileCfg.avatarFallback || profileCfg.avatarImage || null;
   }
 
   function renderAvatarMarkup(altText) {
@@ -656,11 +660,11 @@
     if (inactive) {
       bodyEl.dataset.pageInactive = "true";
       resetGreetingCharsImmediate();
-      destroyYtEmbed();
     } else if (!document.hidden) {
       delete bodyEl.dataset.pageInactive;
     }
     syncVitalsLifecycle();
+    syncYtPolling();
   }
 
   document.addEventListener("visibilitychange", () => {
@@ -723,10 +727,20 @@
   // View Rendering
   // --------------------------------------------------------------------------
 
+  function getToolMonogramHtml(badge, accent) {
+    const styleAttr = accent ? ` style="--badge-accent:${esc(accent)}"` : "";
+    return `<div class="tool-monogram-badge"${styleAttr} aria-hidden="true"><span>${esc(badge)}</span></div>`;
+  }
+
   function renderUseCardHtml(item) {
+    const title = item.title || item.name || "";
+    const subtitle = item.subtitle || item.category || "";
+    const tag = item.tag || item.brand || "";
     const visualHtml = item.image
-      ? `<img src="${esc(item.image)}" alt="${esc(item.name)}" loading="lazy" data-fallback="true" data-kind="gear" data-icon-type="${esc(item.iconType)}">`
-      : getGearIllustrationSvg(item.iconType);
+      ? `<img src="${esc(item.image)}" alt="${esc(title)}" loading="lazy" data-fallback="true" data-kind="gear" data-icon-type="${esc(item.iconType || "palette")}">`
+      : item.badge
+        ? getToolMonogramHtml(item.badge, item.accent)
+        : getGearIllustrationSvg(item.iconType);
 
     return `
       <button class="use-card" type="button" data-use-id="${esc(item.id)}">
@@ -735,29 +749,47 @@
         </div>
         <div class="use-card-visual">${visualHtml}</div>
         <div class="use-card-meta">
-          <span class="use-card-cat">${getSmallIconSvg(item.iconType)} ${esc(item.category)}</span>
-          <span class="use-card-brand">${esc(item.brand)}</span>
-          <span class="use-card-name">${esc(item.name)}</span>
+          ${subtitle ? `<span class="use-card-cat">${getSmallIconSvg(item.iconType || "sparkle")} ${esc(subtitle)}</span>` : ""}
+          ${tag ? `<span class="use-card-brand">${esc(tag)}</span>` : ""}
+          <span class="use-card-name">${esc(title)}</span>
         </div>
       </button>
     `;
   }
 
+  function renderPlaceholderToolCardHtml(groupLabel, emptyText) {
+    return `
+      <div class="use-card placeholder-widget-card" aria-label="${esc(groupLabel)} ${esc(emptyText)}">
+        <div class="use-card-top">
+          <span>${esc(groupLabel.toLowerCase())}</span>
+        </div>
+        <div class="use-card-visual">
+          <div class="placeholder-slot-icon" aria-hidden="true">${getSmallIconSvg("sparkle")}</div>
+        </div>
+        <div class="use-card-meta">
+          <span class="use-card-cat">${esc(groupLabel.toLowerCase())}</span>
+          <span class="use-card-name placeholder-title">${esc(emptyText)}</span>
+        </div>
+      </div>
+    `;
+  }
+
   function renderWorkCardHtml(work) {
+    const summary = work.description || work.summary || "";
     const coverHtml = work.image
-      ? `<img src="${esc(work.image)}" alt="${esc(work.title)}" loading="lazy" data-fallback="true" data-kind="work" data-seed="${esc(work.gradientSeed)}">`
-      : getWorkCoverSvg(work.gradientSeed);
+      ? `<img src="${esc(work.image)}" alt="${esc(work.title)}" loading="lazy" data-fallback="true" data-kind="work" data-seed="${esc(work.gradientSeed || 1)}">`
+      : getWorkCoverSvg(work.gradientSeed || 1);
 
     return `
       <button class="work-card" type="button" data-work-id="${esc(work.id)}">
         <div class="work-cover">${coverHtml}</div>
         <div class="work-body">
           <div class="work-top">
-            <span class="work-cat-pill">${esc(work.category)}</span>
-            <span>${esc(work.year)} · ${esc(work.status)}</span>
+            <span class="work-cat-pill">${esc(work.category || "work")}</span>
+            <span>${esc(work.year || "")}${work.status ? ` · ${esc(work.status)}` : ""}</span>
           </div>
           <h3 class="work-title">${esc(work.title)}</h3>
-          <p class="work-summary">${esc(work.summary)}</p>
+          <p class="work-summary">${esc(summary)}</p>
           <div class="work-tags">
             ${(work.tags || []).map((t) => `<span class="work-tag">${esc(t)}</span>`).join("")}
           </div>
@@ -766,14 +798,38 @@
     `;
   }
 
+  function renderPlaceholderWorkCardHtml(emptyText) {
+    return `
+      <div class="work-card placeholder-widget-card" aria-label="Works ${esc(emptyText)}">
+        <div class="work-cover placeholder-work-cover" aria-hidden="true">
+          <div class="placeholder-slot-icon">${getSmallIconSvg("sparkle")}</div>
+        </div>
+        <div class="work-body">
+          <div class="work-top">
+            <span class="work-cat-pill">works</span>
+            <span>soon</span>
+          </div>
+          <h3 class="work-title placeholder-title">${esc(emptyText)}</h3>
+          <p class="work-summary">projects &amp; creative pieces will appear here once added in data.js</p>
+        </div>
+      </div>
+    `;
+  }
+
   function renderHeroCardHtml() {
     const p = DATA.profile || {};
-    const bannerHtml = p.bannerImage
-      ? `<img src="${esc(p.bannerImage)}" alt="Profile banner" data-fallback="true" data-kind="banner">`
+    const bannerSrc = p.banner || p.bannerImage;
+    const bannerHtml = bannerSrc
+      ? `<img src="${esc(bannerSrc)}" alt="Profile banner" data-fallback="true" data-kind="banner">`
       : getDefaultBannerSvg();
     const avatarHtml = renderAvatarMarkup(p.name || "Profile avatar");
 
-    const metaParts = [p.handle, p.location, p.pronouns, p.joined].filter(Boolean);
+    const tagValue = p.tag || p.handle;
+    const descValue = p.description ?? p.bio ?? "";
+    const contactLabel = p.contactButtonLabel || p.primaryAction?.label || "contact";
+    const targetTab = normalizeTab(p.primaryAction?.targetTab || "contact") || "contact";
+
+    const metaParts = [tagValue, p.location, p.pronouns, p.joined].filter(Boolean);
     const socialsHtml = (p.socials || [])
       .map((s) => {
         const href = safeUrl(s.url);
@@ -784,9 +840,8 @@
       })
       .join("");
 
-    const targetTab = normalizeTab(p.primaryAction?.targetTab || "contact") || "contact";
-    const primaryActionHtml = p.primaryAction
-      ? `<button class="hero-primary-btn" type="button" data-nav-tab="${esc(targetTab)}">${getSmallIconSvg("card")}<span>${esc(p.primaryAction.label || "contact")}</span>${getSmallIconSvg("arrowRight")}</button>`
+    const primaryActionHtml = contactLabel
+      ? `<button class="hero-primary-btn" type="button" data-nav-tab="${esc(targetTab)}">${getSmallIconSvg("card")}<span>${esc(contactLabel)}</span>${getSmallIconSvg("arrowRight")}</button>`
       : "";
 
     const statsHtml =
@@ -832,7 +887,7 @@
               }
             </div>
             <div class="hero-bottom-row">
-              <p class="hero-bio">${esc(p.bio || "")}</p>
+              <p class="hero-bio">${esc(descValue)}</p>
               ${statsHtml}
             </div>
           </div>
@@ -842,12 +897,13 @@
   }
 
   // --------------------------------------------------------------------------
-  // Home Side-by-Side Widgets (YouTube Music + Live Pulsoid HR & Local Time)
+  // Home Side-by-Side Widgets (YouTube Music Player + Live Pulsoid Vitals)
   // --------------------------------------------------------------------------
 
-  const vitalsCfg = DATA.homeWidgets?.heartRate || {};
+  const vitalsCfg = DATA.vitals || DATA.homeWidgets?.heartRate || {};
   const vitalsTz = vitalsCfg.timezone || "Asia/Ho_Chi_Minh";
   const vitalsOfflineMs = Number(vitalsCfg.offlineTimeoutMs) || 15000;
+  const vitalsOfflineNote = vitalsCfg.offlineNote || "monitor not on right now";
   let timeFormatter = null;
   try {
     timeFormatter = new Intl.DateTimeFormat("en-GB", {
@@ -875,6 +931,244 @@
     }
   }
 
+  function formatClockSec(sec) {
+    if (!Number.isFinite(sec) || sec < 0) return "0:00";
+    const total = Math.floor(sec);
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    return `${m}:${String(s).padStart(2, "0")}`;
+  }
+
+  function extractYouTubeId(rawUrl) {
+    const val = String(rawUrl || "").trim();
+    if (!val) return "";
+    if (/^[a-zA-Z0-9_-]{11}$/.test(val)) return val;
+    try {
+      const u = new URL(val);
+      if (u.hostname.includes("youtu.be")) {
+        return u.pathname.replace(/^\//, "").slice(0, 11);
+      }
+      const vParam = u.searchParams.get("v");
+      if (vParam) return vParam.slice(0, 11);
+      const parts = u.pathname.split("/").filter(Boolean);
+      const idx = parts.findIndex((p) => p === "embed" || p === "shorts");
+      if (idx !== -1 && parts[idx + 1]) return parts[idx + 1].slice(0, 11);
+    } catch {
+      return "";
+    }
+    return "";
+  }
+
+  function getMusicConfig() {
+    const raw = DATA.music || DATA.homeWidgets?.favoriteSong;
+    if (!raw) return null;
+    const url = raw.youtubeUrl || raw.url || "";
+    const videoId = raw.videoId || extractYouTubeId(url);
+    const cover =
+      raw.coverImage ||
+      raw.thumbnail ||
+      (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : "");
+    const openUrl =
+      raw.musicUrl ||
+      (videoId ? `https://music.youtube.com/watch?v=${videoId}` : url);
+    return {
+      heading: raw.heading || "favourite song right now",
+      videoId,
+      title: raw.title || "",
+      artist: raw.artist || "",
+      album: raw.album || "",
+      cover,
+      openUrl,
+    };
+  }
+
+  const ytCtrl = {
+    apiRequested: false,
+    player: null,
+    videoId: "",
+    ready: false,
+    playing: false,
+    pendingPlay: false,
+    seeking: false,
+    duration: 0,
+    currentTime: 0,
+    volume: 70,
+    muted: false,
+    pollTimer: 0,
+  };
+
+  function setRangeFill(inputEl, pct) {
+    if (!inputEl) return;
+    const clamped = Math.max(0, Math.min(100, Number(pct) || 0));
+    inputEl.style.setProperty("--pct", `${clamped.toFixed(2)}%`);
+  }
+
+  function syncYtControlsDom() {
+    const btnPlay = document.getElementById("btn-yt-play");
+    const seekEl = document.getElementById("yt-seek");
+    const curEl = document.getElementById("yt-cur-time");
+    const durEl = document.getElementById("yt-dur-time");
+    const btnMute = document.getElementById("btn-yt-mute");
+    const volEl = document.getElementById("yt-volume");
+
+    if (btnPlay) {
+      btnPlay.innerHTML = ytCtrl.playing ? getSmallIconSvg("pause") : getSmallIconSvg("play");
+      btnPlay.setAttribute("aria-label", ytCtrl.playing ? "Pause song" : "Play song");
+      btnPlay.classList.toggle("is-playing", ytCtrl.playing);
+    }
+
+    if (curEl && !ytCtrl.seeking) {
+      curEl.textContent = formatClockSec(ytCtrl.currentTime);
+    }
+    if (durEl) {
+      durEl.textContent = ytCtrl.duration > 0 ? formatClockSec(ytCtrl.duration) : "--:--";
+    }
+    if (seekEl && !ytCtrl.seeking) {
+      const ratio = ytCtrl.duration > 0 ? Math.min(1, ytCtrl.currentTime / ytCtrl.duration) : 0;
+      seekEl.value = String(Math.round(ratio * 1000));
+      setRangeFill(seekEl, ratio * 100);
+    }
+    if (btnMute) {
+      const effectivelyMuted = ytCtrl.muted || ytCtrl.volume === 0;
+      btnMute.innerHTML = effectivelyMuted ? getSmallIconSvg("volumeMuted") : getSmallIconSvg("volumeOn");
+      btnMute.setAttribute("aria-label", effectivelyMuted ? "Unmute" : "Mute");
+    }
+    if (volEl) {
+      const displayVol = ytCtrl.muted ? 0 : ytCtrl.volume;
+      volEl.value = String(displayVol);
+      setRangeFill(volEl, displayVol);
+    }
+  }
+
+  function syncYtPolling() {
+    const shouldPoll =
+      ytCtrl.playing &&
+      stage === "open" &&
+      activeTab === "home" &&
+      !document.hidden &&
+      bodyEl.dataset.pageInactive !== "true";
+
+    if (!shouldPoll) {
+      clearInterval(ytCtrl.pollTimer);
+      ytCtrl.pollTimer = 0;
+      return;
+    }
+
+    if (!ytCtrl.pollTimer) {
+      ytCtrl.pollTimer = setInterval(() => {
+        if (!ytCtrl.ready || !ytCtrl.player || ytCtrl.seeking) return;
+        try {
+          const cur = Number(ytCtrl.player.getCurrentTime?.() || 0);
+          const dur = Number(ytCtrl.player.getDuration?.() || 0);
+          if (dur > 0) ytCtrl.duration = dur;
+          ytCtrl.currentTime = cur;
+          syncYtControlsDom();
+        } catch {
+          // Ignore transient YT API read issues
+        }
+      }, 450);
+    }
+  }
+
+  function createYtPlayerInstance() {
+    const music = getMusicConfig();
+    if (!music?.videoId || ytCtrl.player || !window.YT?.Player) return;
+    if (!document.getElementById("yt-audio-player")) return;
+
+    ytCtrl.videoId = music.videoId;
+    const playerVars = {
+      autoplay: 0,
+      controls: 0,
+      disablekb: 1,
+      fs: 0,
+      modestbranding: 1,
+      rel: 0,
+      playsinline: 1,
+    };
+    if (window.location.protocol.startsWith("http")) {
+      playerVars.origin = window.location.origin;
+    }
+
+    try {
+      ytCtrl.player = new window.YT.Player("yt-audio-player", {
+        width: 200,
+        height: 113,
+        videoId: music.videoId,
+        playerVars,
+        events: {
+          onReady: (e) => {
+            ytCtrl.ready = true;
+            try {
+              e.target.setVolume(ytCtrl.volume);
+              if (ytCtrl.muted) e.target.mute();
+              const dur = Number(e.target.getDuration?.() || 0);
+              if (dur > 0) ytCtrl.duration = dur;
+              if (ytCtrl.pendingPlay) {
+                ytCtrl.pendingPlay = false;
+                e.target.playVideo();
+              }
+            } catch {
+              // Ignore
+            }
+            syncYtControlsDom();
+            syncYtPolling();
+          },
+          onStateChange: (e) => {
+            const st = window.YT?.PlayerState;
+            if (!st) return;
+            if (e.data === st.PLAYING) {
+              ytCtrl.playing = true;
+              const dur = Number(ytCtrl.player?.getDuration?.() || 0);
+              if (dur > 0) ytCtrl.duration = dur;
+            } else if (e.data === st.PAUSED) {
+              ytCtrl.playing = false;
+            } else if (e.data === st.ENDED) {
+              ytCtrl.playing = false;
+              ytCtrl.currentTime = ytCtrl.duration;
+            }
+            syncYtControlsDom();
+            syncYtPolling();
+          },
+          onError: () => {
+            ytCtrl.playing = false;
+            ytCtrl.pendingPlay = false;
+            syncYtControlsDom();
+            syncYtPolling();
+          },
+        },
+      });
+    } catch {
+      ytCtrl.player = null;
+    }
+  }
+
+  function ensureYtPlayerLoaded() {
+    if (ytCtrl.player) return;
+    if (window.YT?.Player) {
+      createYtPlayerInstance();
+      return;
+    }
+    if (ytCtrl.apiRequested) return;
+    ytCtrl.apiRequested = true;
+
+    const prevReady = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => {
+      if (typeof prevReady === "function") {
+        try {
+          prevReady();
+        } catch {
+          // Ignore
+        }
+      }
+      createYtPlayerInstance();
+    };
+
+    const script = document.createElement("script");
+    script.src = "https://www.youtube.com/iframe_api";
+    script.async = true;
+    document.head.appendChild(script);
+  }
+
   const vitalsState = {
     ws: null,
     tickTimer: 0,
@@ -884,7 +1178,7 @@
     bpm: null,
     lastHeartbeatMs: 0,
     lastSessionDataMs: 0,
-    statusText: "connecting",
+    statusText: vitalsOfflineNote,
   };
 
   function isVitalsNeeded() {
@@ -919,7 +1213,7 @@
     } else {
       bpmEl.textContent = "--";
       widgetEl.style.removeProperty("--beat-dur");
-      subEl.textContent = vitalsState.statusText;
+      subEl.textContent = vitalsOfflineNote;
     }
   }
 
@@ -962,10 +1256,6 @@
     closePulsoidSocket();
     vitalsState.isConnecting = true;
     vitalsState.lastSessionDataMs = Date.now();
-    if (vitalsState.bpm == null) {
-      vitalsState.statusText = "connecting";
-      updateVitalsDom();
-    }
 
     let ws;
     try {
@@ -973,7 +1263,7 @@
       vitalsState.ws = ws;
     } catch {
       vitalsState.isConnecting = false;
-      vitalsState.statusText = "offline";
+      vitalsState.statusText = vitalsOfflineNote;
       updateVitalsDom();
       schedulePulsoidReconnect(4500);
       return;
@@ -982,7 +1272,7 @@
     vitalsState.connectTimeoutTimer = setTimeout(() => {
       if (vitalsState.ws === ws && ws.readyState !== WebSocket.OPEN) {
         closePulsoidSocket();
-        vitalsState.statusText = "offline";
+        vitalsState.statusText = vitalsOfflineNote;
         updateVitalsDom();
         schedulePulsoidReconnect(3500);
       }
@@ -994,10 +1284,6 @@
       vitalsState.connectTimeoutTimer = 0;
       vitalsState.isConnecting = false;
       vitalsState.lastSessionDataMs = Date.now();
-      if (vitalsState.lastHeartbeatMs === 0) {
-        vitalsState.statusText = "waiting";
-        updateVitalsDom();
-      }
     };
 
     ws.onmessage = (event) => {
@@ -1021,7 +1307,7 @@
           } else if (bpm === 0) {
             vitalsState.bpm = null;
             vitalsState.lastHeartbeatMs = 0;
-            vitalsState.statusText = "offline";
+            vitalsState.statusText = vitalsOfflineNote;
           }
           updateVitalsDom();
         }
@@ -1037,7 +1323,7 @@
       clearTimeout(vitalsState.connectTimeoutTimer);
       vitalsState.connectTimeoutTimer = 0;
       if (vitalsState.lastHeartbeatMs === 0 || Date.now() - vitalsState.lastHeartbeatMs > vitalsOfflineMs) {
-        vitalsState.statusText = "offline";
+        vitalsState.statusText = vitalsOfflineNote;
         updateVitalsDom();
       }
       schedulePulsoidReconnect(4000);
@@ -1071,7 +1357,7 @@
         const now = Date.now();
         if (vitalsState.lastHeartbeatMs > 0 && now - vitalsState.lastHeartbeatMs > vitalsOfflineMs) {
           vitalsState.bpm = null;
-          vitalsState.statusText = "offline";
+          vitalsState.statusText = vitalsOfflineNote;
         }
         if (
           vitalsState.ws &&
@@ -1089,29 +1375,15 @@
     connectPulsoidSocket();
   }
 
-  function destroyYtEmbed() {
-    const slot = document.getElementById("yt-embed-slot");
-    const btn = document.getElementById("btn-yt-toggle");
-    if (slot) {
-      slot.innerHTML = "";
-      slot.hidden = true;
-    }
-    if (btn) {
-      btn.setAttribute("aria-expanded", "false");
-      btn.classList.remove("is-playing");
-      btn.innerHTML = getSmallIconSvg("play");
-    }
-  }
-
   function renderHomeWidgetsHtml() {
-    const song = DATA.homeWidgets?.favoriteSong;
-    const hr = DATA.homeWidgets?.heartRate;
+    const song = getMusicConfig();
+    const hr = DATA.vitals || DATA.homeWidgets?.heartRate;
     if (!song && !hr) return "";
 
-    const songHref = safeUrl(song?.musicUrl || song?.url || "#");
+    const songHref = safeUrl(song?.openUrl || "#");
     const ext = isExternalUrl(songHref);
-    const thumbHtml = song?.thumbnail
-      ? `<img src="${esc(song.thumbnail)}" alt="${esc(song.title || "Favourite song")}" data-fallback="true" data-kind="music">`
+    const thumbHtml = song?.cover
+      ? `<img src="${esc(song.cover)}" alt="${esc(song.title || "Favourite song")}" data-fallback="true" data-kind="music">`
       : getSmallIconSvg("ytMusic");
 
     const now = Date.now();
@@ -1121,10 +1393,12 @@
       typeof vitalsState.bpm === "number" &&
       vitalsState.bpm > 0;
     const bpmVal = isLive ? String(vitalsState.bpm) : "--";
-    const hrSub = isLive ? "live" : vitalsState.statusText;
+    const hrSub = isLive ? "live" : vitalsOfflineNote;
     const beatStyle = isLive
       ? ` style="--beat-dur:${Math.max(0.38, Math.min(1.5, 60 / vitalsState.bpm)).toFixed(2)}s"`
       : "";
+
+    const volVal = ytCtrl.muted ? 0 : ytCtrl.volume;
 
     return `
       <section class="home-widgets-row" aria-label="Status widgets">
@@ -1132,22 +1406,34 @@
           song
             ? `<div class="widget-card yt-music-widget">
                 <div class="widget-eyebrow-row">
-                  <span class="widget-eyebrow-label">${getSmallIconSvg("ytMusic")}<span>${esc(song.heading || "favourite song right now")}</span></span>
+                  <span class="widget-eyebrow-label">${getSmallIconSvg("ytMusic")}<span>${esc(song.heading)}</span></span>
                   <a class="widget-ext-link" href="${esc(songHref)}"${ext ? ' target="_blank" rel="noopener noreferrer"' : ""} aria-label="Open in YouTube Music">↗</a>
                 </div>
                 <div class="yt-music-row">
                   <a class="yt-thumb-wrap" href="${esc(songHref)}"${ext ? ' target="_blank" rel="noopener noreferrer"' : ""} tabindex="-1" aria-hidden="true">${thumbHtml}</a>
                   <div class="yt-meta">
-                    <a class="yt-title" href="${esc(songHref)}"${ext ? ' target="_blank" rel="noopener noreferrer"' : ""} title="${esc(song.title || "")}">${esc(song.title || "")}</a>
-                    <span class="yt-artist">${esc(song.artist || "")}${song.album ? ` · ${esc(song.album)}` : ""}</span>
+                    <a class="yt-title" href="${esc(songHref)}"${ext ? ' target="_blank" rel="noopener noreferrer"' : ""} title="${esc(song.title)}">${esc(song.title)}</a>
+                    <span class="yt-artist">${esc(song.artist)}${song.album ? ` · ${esc(song.album)}` : ""}</span>
                   </div>
                   ${
                     song.videoId
-                      ? `<button id="btn-yt-toggle" class="yt-play-btn" type="button" aria-expanded="false" aria-label="Play favourite song preview" data-yt-id="${esc(song.videoId)}">${getSmallIconSvg("play")}</button>`
+                      ? `<button id="btn-yt-play" class="yt-play-btn${ytCtrl.playing ? " is-playing" : ""}" type="button" aria-label="${ytCtrl.playing ? "Pause song" : "Play song"}">${ytCtrl.playing ? getSmallIconSvg("pause") : getSmallIconSvg("play")}</button>`
                       : ""
                   }
                 </div>
-                <div id="yt-embed-slot" class="yt-embed-slot" hidden></div>
+                ${
+                  song.videoId
+                    ? `<div class="yt-controls-bar">
+                        <span id="yt-cur-time" class="yt-time">${esc(formatClockSec(ytCtrl.currentTime))}</span>
+                        <input id="yt-seek" class="yt-range yt-seek" type="range" min="0" max="1000" value="0" style="--pct:0%" aria-label="Seek track">
+                        <span id="yt-dur-time" class="yt-time">${esc(ytCtrl.duration > 0 ? formatClockSec(ytCtrl.duration) : "--:--")}</span>
+                        <div class="yt-vol-wrap">
+                          <button id="btn-yt-mute" class="yt-mute-btn" type="button" aria-label="${volVal === 0 ? "Unmute" : "Mute"}">${volVal === 0 ? getSmallIconSvg("volumeMuted") : getSmallIconSvg("volumeOn")}</button>
+                          <input id="yt-volume" class="yt-range yt-volume" type="range" min="0" max="100" value="${volVal}" style="--pct:${volVal}%" aria-label="Volume">
+                        </div>
+                      </div>`
+                    : ""
+                }
               </div>`
             : ""
         }
@@ -1191,20 +1477,27 @@
     `;
   }
 
+  function getToolsGroupItems(group) {
+    if (DATA.tools && Array.isArray(DATA.tools[group.toLowerCase()])) {
+      return DATA.tools[group.toLowerCase()];
+    }
+    return (DATA.activeUses || []).filter((i) => i.filterGroup === group);
+  }
+
   function renderToolsView() {
-    const items = (DATA.activeUses || []).filter(
-      (i) => i.filterGroup === "Software" || i.filterGroup === "Peripherals"
-    );
-    const allowedGroups = ["Software", "Peripherals"];
-    const groups = allowedGroups.filter((g) => items.some((i) => i.filterGroup === g));
-    const activeFilter = groups.includes(activeUseFilter) ? activeUseFilter : (groups[0] || "Software");
-    const filtered = items.filter((i) => i.filterGroup === activeFilter);
+    const groups = ["Software", "Peripherals"];
+    const activeFilter = groups.includes(activeUseFilter) ? activeUseFilter : "Software";
+    const filtered = getToolsGroupItems(activeFilter);
+    const emptyText = DATA.tools?.emptyText || "to be updated";
+    const heading = DATA.tools?.heading || DATA.activeUsesSection?.heading || "Tools & Setup";
+    const subtitle =
+      DATA.tools?.subtitle || "Creative apps, coding tools, and setup essentials. Click any card for details.";
 
     return `
       <div class="portfolio-view-inner">
         <div class="section-head-centered">
-          <h1 id="view-heading" class="section-title" tabindex="-1">${esc(DATA.activeUsesSection?.heading || "Tools & Setup")}</h1>
-          <p class="section-subtitle">Software, hardware, and daily creative essentials. Click any card for details.</p>
+          <h1 id="view-heading" class="section-title" tabindex="-1">${esc(heading)}</h1>
+          <p class="section-subtitle">${esc(subtitle)}</p>
         </div>
 
         <div class="filter-pills" role="group" aria-label="Filter tools by category">
@@ -1215,22 +1508,40 @@
             .join("")}
         </div>
 
-        <div class="uses-grid">
-          ${filtered.map(renderUseCardHtml).join("")}
+        <div class="uses-grid${filtered.length === 0 ? " uses-grid-empty" : ""}">
+          ${
+            filtered.length > 0
+              ? filtered.map(renderUseCardHtml).join("")
+              : renderPlaceholderToolCardHtml(activeFilter, emptyText)
+          }
         </div>
       </div>
     `;
   }
 
+  function getWorksList() {
+    if (Array.isArray(DATA.works)) return DATA.works;
+    if (Array.isArray(DATA.works?.items)) return DATA.works.items;
+    return [];
+  }
+
   function renderWorksView() {
-    const works = DATA.works || [];
+    const worksCfg = Array.isArray(DATA.works) ? {} : (DATA.works || {});
+    const heading = worksCfg.heading || DATA.worksSection?.heading || "Works";
+    const subtitle = worksCfg.subtitle ?? DATA.worksSection?.subtitle ?? "";
+    const emptyText = worksCfg.emptyText || "to be updated";
+    const works = getWorksList();
+
     if (works.length === 0) {
       return `
         <div class="portfolio-view-inner">
           <div class="section-head-centered">
-            <h1 id="view-heading" class="section-title" tabindex="-1">${esc(DATA.worksSection?.heading || "Works")}</h1>
+            <h1 id="view-heading" class="section-title" tabindex="-1">${esc(heading)}</h1>
+            ${subtitle ? `<p class="section-subtitle">${esc(subtitle)}</p>` : ""}
           </div>
-          <div class="empty-works-panel">Nothing here yet — adding soon ✨</div>
+          <div class="works-grid works-grid-empty">
+            ${renderPlaceholderWorkCardHtml(emptyText)}
+          </div>
         </div>
       `;
     }
@@ -1241,8 +1552,8 @@
     return `
       <div class="portfolio-view-inner">
         <div class="section-head-centered">
-          <h1 id="view-heading" class="section-title" tabindex="-1">${esc(DATA.worksSection?.heading || "Works")}</h1>
-          ${DATA.worksSection?.subtitle ? `<p class="section-subtitle">${esc(DATA.worksSection.subtitle)}</p>` : ""}
+          <h1 id="view-heading" class="section-title" tabindex="-1">${esc(heading)}</h1>
+          ${subtitle ? `<p class="section-subtitle">${esc(subtitle)}</p>` : ""}
         </div>
 
         <div class="filter-pills" role="group" aria-label="Filter works by discipline">
@@ -1262,15 +1573,17 @@
 
   function renderContactView() {
     const p = DATA.profile || {};
-    const lk = DATA.links || {};
+    const lk = DATA.contact || DATA.links || {};
     const avatarHtml = renderAvatarMarkup(p.name || "Avatar");
-    const subParts = [p.handle, p.pronouns].filter(Boolean);
+    const tagVal = p.tag || p.handle;
+    const descVal = lk.description || lk.cardBio || p.description || p.bio || "";
+    const subParts = [tagVal, p.pronouns].filter(Boolean);
 
     return `
       <div class="portfolio-view-inner">
         <div class="section-head-centered">
           <h1 id="view-heading" class="section-title" tabindex="-1">${esc(lk.heading || "Contact")}</h1>
-          <p class="section-subtitle">${esc(p.name || "")}${p.handle ? ` · ${esc(p.handle)}` : ""}</p>
+          <p class="section-subtitle">${esc(p.name || "")}${tagVal ? ` · ${esc(tagVal)}` : ""}</p>
         </div>
 
         <div class="card-layout">
@@ -1283,7 +1596,7 @@
               </div>
             </div>
 
-            <p class="card-bio-text">${esc(lk.cardBio || p.bio || "")}</p>
+            <p class="card-bio-text">${esc(descVal)}</p>
 
             ${
               Array.isArray(lk.currently) && lk.currently.length
@@ -1344,6 +1657,8 @@
     attachImageFallbacks(portfolioMain);
     wireRenderedViewInteractions();
     syncVitalsLifecycle();
+    syncYtControlsDom();
+    syncYtPolling();
   }
 
   function updateNavState() {
@@ -1440,18 +1755,25 @@
 
     portfolioMain.querySelectorAll("[data-use-id]").forEach((card) => {
       card.addEventListener("click", () => {
-        const item = (DATA.activeUses || []).find((u) => u.id === card.dataset.useId);
+        const allTools = [...getToolsGroupItems("Software"), ...getToolsGroupItems("Peripherals")];
+        const item = allTools.find((u) => u.id === card.dataset.useId);
         if (!item) return;
+        const title = item.title || item.name || "";
+        const subtitle = item.subtitle || item.category || "";
+        const tag = item.tag || item.brand || "";
+        const desc = item.description || item.notes || "";
         const visualHtml = item.image
-          ? `<img src="${esc(item.image)}" alt="${esc(item.name)}" data-fallback="true" data-kind="gear" data-icon-type="${esc(item.iconType)}">`
-          : getGearIllustrationSvg(item.iconType);
+          ? `<img src="${esc(item.image)}" alt="${esc(title)}" data-fallback="true" data-kind="gear" data-icon-type="${esc(item.iconType || "palette")}">`
+          : item.badge
+            ? getToolMonogramHtml(item.badge, item.accent)
+            : getGearIllustrationSvg(item.iconType);
         openItemDialog(
           card,
-          `${item.category} · ${item.status || "in use"}`,
+          `${subtitle || "tool"}${item.status ? ` · ${item.status}` : ""}`,
           visualHtml,
-          item.name,
-          `${item.brand || ""}`,
-          item.notes || "",
+          title,
+          tag,
+          desc,
           item.url
         );
       });
@@ -1459,46 +1781,117 @@
 
     portfolioMain.querySelectorAll("[data-work-id]").forEach((card) => {
       card.addEventListener("click", () => {
-        const work = (DATA.works || []).find((w) => w.id === card.dataset.workId);
+        const work = getWorksList().find((w) => w.id === card.dataset.workId);
         if (!work) return;
         const visualHtml = work.image
-          ? `<img src="${esc(work.image)}" alt="${esc(work.title)}" data-fallback="true" data-kind="work" data-seed="${esc(work.gradientSeed)}">`
-          : getWorkCoverSvg(work.gradientSeed);
+          ? `<img src="${esc(work.image)}" alt="${esc(work.title)}" data-fallback="true" data-kind="work" data-seed="${esc(work.gradientSeed || 1)}">`
+          : getWorkCoverSvg(work.gradientSeed || 1);
         openItemDialog(
           card,
-          `${work.category} · ${work.year}`,
+          `${work.category || "work"}${work.year ? ` · ${work.year}` : ""}`,
           visualHtml,
           work.title,
-          `${work.status} · ${(work.tags || []).join(" · ")}`,
-          work.summary || "",
+          `${work.status || ""}${work.tags?.length ? ` · ${work.tags.join(" · ")}` : ""}`,
+          work.description || work.summary || "",
           work.url
         );
       });
     });
 
     document.getElementById("btn-copy-handle")?.addEventListener("click", () => {
-      copyText(DATA.profile?.handle || "@yourhandle", `Copied ${DATA.profile?.handle || "handle"}`);
+      const tag = DATA.profile?.tag || DATA.profile?.handle || "@sachikofukuari";
+      copyText(tag, `Copied ${tag}`);
     });
 
     document.getElementById("btn-copy-url")?.addEventListener("click", () => {
       copyText(window.location.href, "Copied portfolio link");
     });
 
-    const btnYtToggle = document.getElementById("btn-yt-toggle");
-    btnYtToggle?.addEventListener("click", () => {
-      const slot = document.getElementById("yt-embed-slot");
-      const videoId = btnYtToggle.dataset.ytId;
-      if (!slot || !videoId) return;
-      const opening = slot.hidden;
-      if (opening) {
-        slot.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?autoplay=1&rel=0" title="Favourite song preview" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe>`;
-        slot.hidden = false;
-        btnYtToggle.setAttribute("aria-expanded", "true");
-        btnYtToggle.classList.add("is-playing");
-        btnYtToggle.innerHTML = getSmallIconSvg("close");
-      } else {
-        destroyYtEmbed();
+    const btnPlay = document.getElementById("btn-yt-play");
+    const seekEl = document.getElementById("yt-seek");
+    const curEl = document.getElementById("yt-cur-time");
+    const btnMute = document.getElementById("btn-yt-mute");
+    const volEl = document.getElementById("yt-volume");
+
+    btnPlay?.addEventListener("click", () => {
+      ensureYtPlayerLoaded();
+      if (!ytCtrl.ready || !ytCtrl.player) {
+        ytCtrl.pendingPlay = !ytCtrl.pendingPlay;
+        return;
       }
+      try {
+        if (ytCtrl.playing) ytCtrl.player.pauseVideo();
+        else ytCtrl.player.playVideo();
+      } catch {
+        // Ignore player state errors
+      }
+    });
+
+    seekEl?.addEventListener("input", () => {
+      ytCtrl.seeking = true;
+      const pct = Number(seekEl.value) / 10;
+      setRangeFill(seekEl, pct);
+      if (ytCtrl.duration > 0 && curEl) {
+        curEl.textContent = formatClockSec((Number(seekEl.value) / 1000) * ytCtrl.duration);
+      }
+    });
+
+    seekEl?.addEventListener("change", () => {
+      const ratio = Math.max(0, Math.min(1, Number(seekEl.value) / 1000));
+      setRangeFill(seekEl, ratio * 100);
+      if (ytCtrl.ready && ytCtrl.player) {
+        const dur = ytCtrl.duration > 0 ? ytCtrl.duration : Number(ytCtrl.player.getDuration?.() || 0);
+        if (dur > 0) {
+          ytCtrl.duration = dur;
+          const targetSec = ratio * dur;
+          ytCtrl.currentTime = targetSec;
+          try {
+            ytCtrl.player.seekTo(targetSec, true);
+          } catch {
+            // Ignore
+          }
+        }
+      }
+      ytCtrl.seeking = false;
+      syncYtControlsDom();
+    });
+
+    volEl?.addEventListener("input", () => {
+      ensureYtPlayerLoaded();
+      const val = Math.max(0, Math.min(100, parseInt(volEl.value, 10) || 0));
+      ytCtrl.volume = val;
+      if (val > 0 && ytCtrl.muted) {
+        ytCtrl.muted = false;
+        try {
+          ytCtrl.player?.unMute?.();
+        } catch {
+          // Ignore
+        }
+      }
+      try {
+        ytCtrl.player?.setVolume?.(val);
+      } catch {
+        // Ignore
+      }
+      syncYtControlsDom();
+    });
+
+    btnMute?.addEventListener("click", () => {
+      ensureYtPlayerLoaded();
+      ytCtrl.muted = !ytCtrl.muted;
+      try {
+        if (ytCtrl.muted) ytCtrl.player?.mute?.();
+        else {
+          ytCtrl.player?.unMute?.();
+          if (ytCtrl.volume === 0) {
+            ytCtrl.volume = 60;
+            ytCtrl.player?.setVolume?.(60);
+          }
+        }
+      } catch {
+        // Ignore
+      }
+      syncYtControlsDom();
     });
   }
 
@@ -1533,9 +1926,6 @@
 
     if (targetTab === "tools" && activeTab !== "tools") {
       activeUseFilter = "Software";
-    }
-    if (activeTab === "home" && targetTab !== "home") {
-      destroyYtEmbed();
     }
     activeTab = targetTab;
     if (updateHash && window.location.hash !== `#${targetTab}`) {
@@ -1641,6 +2031,7 @@
     renderActiveView();
     updateNavState();
     resetGreetingMotion();
+    ensureYtPlayerLoaded();
 
     setTimeout(() => {
       if (stage === "open") focusViewHeading();
@@ -1650,10 +2041,10 @@
   function closeToIntro() {
     if (stage === "intro" || transitionLocked) return;
     if (itemDialog?.open) itemDialog.close();
-    destroyYtEmbed();
     lockTransition(2300);
     stage = "intro";
     syncVitalsLifecycle();
+    syncYtPolling();
     bodyEl.dataset.stage = "intro";
     portfolioShell.inert = true;
     portfolioShell.setAttribute("aria-hidden", "true");

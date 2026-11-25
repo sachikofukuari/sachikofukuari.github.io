@@ -1,18 +1,21 @@
 /**
  * ============================================================================
- * PORTFOLIO DATA CONFIGURATION
+ * PORTFOLIO CONTENT CONFIGURATION (EDIT HERE!)
  * ============================================================================
- * Edit this file to customize everything on your portfolio without touching
- * HTML or application logic.
+ * Everything you normally update lives in this one file:
+ * - Intro text
+ * - Profile (name, tag, description, banner, Discord avatar, contact button)
+ * - Favourite song (YouTube / YouTube Music link, title, artist, album)
+ * - Live vitals (Pulsoid heart rate + local time)
+ * - Tools (Software & Peripherals — leave [] to show "to be updated")
+ * - Works (leave [] to show a clean "to be updated" example card)
+ * - Contact links
  *
- * Tips:
- * - Put custom photos in `assets/images/` (for example, `assets/images/avatar.jpg`)
- *   and set `bannerImage`, `avatarImage`, or an item's `image` to that path.
- * - Leave any `image` set to `null` to display the built-in pastel rose SVG artwork.
- * - Set `stats` to `[]` if you prefer to hide the stats numbers in the hero card.
+ * See CONTENT_GUIDE.md for step-by-step copy-paste examples & image tips.
  */
 
 window.PORTFOLIO_DATA = {
+  // 1. LANDING / INTRO SCREEN
   intro: {
     greeting: "Hello, im Ari",
     cue: "scroll or click",
@@ -23,159 +26,187 @@ window.PORTFOLIO_DATA = {
     sakuraAccents: true,
   },
 
+  // 2. PROFILE CARD (HOME PAGE)
   profile: {
     name: "Sachiko Fukuari (幸子福有)",
-    sparkle: "",
-    handle: "@sachikofukuari",
-    location: "",
-    pronouns: "",
-    joined: "",
-    bio: "be kind! 💖🌸 ",
-    bannerImage: "assets/images/banner.jpg?v=4",
-    // Set your 17-19 digit Discord User ID here to auto-sync your live Discord profile picture
+    tag: "@sachikofukuari",
+    description: "be kind! 💖🌸 ",
+    banner: "assets/images/banner.jpg?v=5",
+    // Your Discord User ID (auto-syncs your current Discord profile picture)
     discordUserId: "732043268946133133",
-    avatarImage: "https://cdn.discordapp.com/avatars/732043268946133133/c232585fd1847e1c3666537a61429aa1.webp?size=256",
-    primaryAction: {
-      label: "contact",
-      targetTab: "contact",
-    },
-    socials: [],
-    stats: [],
-    badges: [],
+    avatarFallback: "https://cdn.discordapp.com/avatars/732043268946133133/c232585fd1847e1c3666537a61429aa1.webp?size=256",
+    contactButtonLabel: "contact",
   },
 
-  homeWidgets: {
-    favoriteSong: {
-      heading: "favourite song right now",
-      videoId: "6RWCiktXFfI",
-      title: "LK Cứ Trao Đi, Chưa Bao Giờ",
-      artist: "Hà Anh Tuấn ft. Thu Phương",
-      album: "Sketch a Rose",
-      url: "https://youtu.be/6RWCiktXFfI?si=29Jsj7z8XsWH83Zh",
-      musicUrl: "https://music.youtube.com/watch?v=6RWCiktXFfI",
-      thumbnail: "https://i.ytimg.com/vi/6RWCiktXFfI/hqdefault.jpg",
-    },
-    heartRate: {
-      heading: "live vitals",
-      timezone: "Asia/Ho_Chi_Minh",
-      timezoneLabel: "UTC+7",
-      pulsoidWsUrl: "wss://dev.pulsoid.net/api/v1/data/real_time?access_token=859d5fed-9af3-4f09-bc8f-98cd4c5df159&response_mode=legacy_json",
-      offlineTimeoutMs: 15000,
-    },
+  // 3. FAVOURITE SONG WIDGET (LEFT HOME WIDGET)
+  // Paste any YouTube / youtu.be / YouTube Music URL in `youtubeUrl`.
+  // Cover thumbnail auto-loads from YouTube unless you set `coverImage`.
+  music: {
+    heading: "favourite song right now",
+    youtubeUrl: "https://youtu.be/6RWCiktXFfI?si=29Jsj7z8XsWH83Zh",
+    title: "LK Cứ Trao Đi, Chưa Bao Giờ",
+    artist: "Hà Anh Tuấn ft. Thu Phương",
+    album: "Sketch a Rose",
+    coverImage: "",
   },
 
-  activeUsesSection: {
+  // 4. LIVE VITALS WIDGET (RIGHT HOME WIDGET)
+  vitals: {
+    heading: "live vitals",
+    timezone: "Asia/Ho_Chi_Minh",
+    timezoneLabel: "UTC+7",
+    offlineNote: "monitor not on right now",
+    pulsoidWsUrl: "wss://dev.pulsoid.net/api/v1/data/real_time?access_token=859d5fed-9af3-4f09-bc8f-98cd4c5df159&response_mode=legacy_json",
+    offlineTimeoutMs: 15000,
+  },
+
+  // 5. TOOLS TAB (SOFTWARE & PERIPHERALS)
+  // Put custom images inside `assets/images/` and set `image: "assets/images/your-file.png"`.
+  // Leave `image: ""` to show the clean badge/icon instead.
+  tools: {
     heading: "Tools & Setup",
-    viewAllLabel: "see all tools →",
-  },
+    subtitle: "Creative apps, coding tools, and setup essentials. Click any card for details.",
+    emptyText: "to be updated",
 
-  // Software & Peripherals items displayed in the `tools` tab.
-  activeUses: [
-    {
-      id: "software-design",
-      featured: false,
-      status: "daily",
-      category: "design & art",
-      filterGroup: "Software",
-      brand: "figma / clip studio",
-      name: "ui & illustration stack",
-      image: null,
-      iconType: "palette",
-      notes: "Where wireframes, color palettes, botanical motifs, and brush packs come together.",
-      url: "#works",
-    },
-    {
-      id: "software-code",
-      featured: false,
-      status: "daily",
-      category: "editor & shaders",
-      filterGroup: "Software",
-      brand: "neovim / webgl",
-      name: "creative dev setup",
-      image: null,
-      iconType: "code",
-      notes: "Minimal rose-tinted editor theme, custom GLSL sandboxes, and clean static builds.",
-      url: "#works",
-    },
-    {
-      id: "mouse-superlight",
-      featured: true,
-      status: "in use",
-      category: "mouse",
-      filterGroup: "Peripherals",
-      brand: "logitech",
-      name: "g pro x superlight 2",
-      image: null,
-      iconType: "mouse",
-      notes: "Featherlight wireless shape with crisp clicks for daily sketching, coding, and competitive play.",
-      url: "https://www.logitechg.com/",
-    },
-    {
-      id: "pad-pastel-glass",
-      featured: true,
-      status: "in use",
-      category: "mousepad",
-      filterGroup: "Peripherals",
-      brand: "custom glass",
-      name: "sakura mist surface",
-      image: null,
-      iconType: "mousepad",
-      notes: "Silky low-friction glide with soft rose artwork — effortless micro-adjustments and easy to clean.",
-      url: "#works",
-    },
-    {
-      id: "kb-lily58",
-      featured: true,
-      status: "in use",
-      category: "keyboard",
-      filterGroup: "Peripherals",
-      brand: "split ergo",
-      name: "lily58 pro custom",
-      image: null,
-      iconType: "keyboard",
-      notes: "Column-staggered split layout with tactile silent switches and creamy pastel keycaps.",
-      url: "#tools",
-    },
-    {
-      id: "tablet-pen",
-      featured: false,
-      status: "in use",
-      category: "pen display",
-      filterGroup: "Peripherals",
-      brand: "wacom",
-      name: "intuos pro medium",
-      image: null,
-      iconType: "tablet",
-      notes: "Natural tilt response for character illustrations, sticker sheets, and vector linework.",
-      url: "#works",
-    },
-  ],
+    software: [
+      /* Copy & paste this template to add another Software item:
+      {
+        id: "example-app",
+        title: "App Name",
+        subtitle: "short category",
+        tag: "brand / suite",
+        status: "daily",
+        badge: "Ex",
+        accent: "#ff96bf",
+        image: "", // optional: "assets/images/example.png"
+        description: "One or two sentences about how you use it.",
+        url: "https://example.com",
+      },
+      */
+      {
+        id: "adobe-ai",
+        title: "Adobe Illustrator",
+        subtitle: "vector & branding",
+        tag: "adobe creative cloud",
+        status: "daily",
+        badge: "Ai",
+        accent: "#ff9a00",
+        image: "",
+        description: "Vector illustration, logos, iconography, and scalable artwork.",
+        url: "https://www.adobe.com/products/illustrator.html",
+      },
+      {
+        id: "adobe-pr",
+        title: "Adobe Premiere Pro",
+        subtitle: "video editing",
+        tag: "adobe creative cloud",
+        status: "daily",
+        badge: "Pr",
+        accent: "#9999ff",
+        image: "",
+        description: "Timeline video editing, pacing, audio mixing, and color grading.",
+        url: "https://www.adobe.com/products/premiere.html",
+      },
+      {
+        id: "adobe-ps",
+        title: "Adobe Photoshop",
+        subtitle: "photo & graphics",
+        tag: "adobe creative cloud",
+        status: "daily",
+        badge: "Ps",
+        accent: "#31a8ff",
+        image: "",
+        description: "Photo retouching, compositing, key visuals, and digital painting.",
+        url: "https://www.adobe.com/products/photoshop.html",
+      },
+      {
+        id: "adobe-id",
+        title: "Adobe InDesign",
+        subtitle: "editorial & layout",
+        tag: "adobe creative cloud",
+        status: "daily",
+        badge: "Id",
+        accent: "#ff3366",
+        image: "",
+        description: "Editorial layouts, typography systems, booklets, and print spreads.",
+        url: "https://www.adobe.com/products/indesign.html",
+      },
+      {
+        id: "vscode",
+        title: "Visual Studio Code",
+        subtitle: "code editor",
+        tag: "coding",
+        status: "daily",
+        badge: "VS",
+        accent: "#38bdf8",
+        image: "",
+        description: "Primary code editor for web builds, creative coding, and daily projects.",
+        url: "https://code.visualstudio.com/",
+      },
+      {
+        id: "gemini",
+        title: "Gemini",
+        subtitle: "ai assistant",
+        tag: "coding & ai",
+        status: "daily",
+        badge: "✦",
+        accent: "#c084fc",
+        image: "",
+        description: "AI companion for brainstorming, coding workflows, and debugging.",
+        url: "https://gemini.google.com/",
+      },
+    ],
 
-  favorites: {
-    heading: "Games & Favorites",
-    items: [
-      { name: "Tactical FPS", shortCode: "VAL", iconType: "crosshair", url: "#tools", accent: "#f0859f" },
-      { name: "Arena Movement", shortCode: "FIN", iconType: "triangle", url: "#tools", accent: "#f6b2c9" },
-      { name: "Cozy Rhythm", shortCode: "RHY", iconType: "music", url: "#tools", accent: "#e898d4" },
-      { name: "Sketch & Tea", shortCode: "ART", iconType: "sparkle", url: "#works", accent: "#f9c6d7" },
+    // Leave `peripherals: []` empty to display a clean "to be updated" placeholder card.
+    peripherals: [
+      /* Copy & paste this template when you want to add Peripherals:
+      {
+        id: "mouse-1",
+        title: "Mouse Name",
+        subtitle: "mouse",
+        tag: "brand",
+        status: "in use",
+        badge: "MS",
+        accent: "#f48fb1",
+        image: "", // e.g. "assets/images/mouse.jpg"
+        description: "Notes about switches, weight, skates, or why you like it.",
+        url: "",
+      },
+      */
     ],
   },
 
-  worksSection: {
+  // 6. WORKS TAB
+  // Leave `items: []` empty to display a clean "to be updated" example card.
+  works: {
     heading: "Works",
     subtitle: "",
+    emptyText: "to be updated",
+    items: [
+      /* Copy & paste this template to add a project/work:
+      {
+        id: "project-1",
+        title: "Project Title",
+        category: "Design", // creates filter tabs automatically when items exist
+        year: "2026",
+        status: "released",
+        image: "", // optional: "assets/images/project-1.jpg"
+        description: "Short summary shown on the card and popup modal.",
+        tags: ["Photoshop", "Illustrator"],
+        url: "https://example.com",
+      },
+      */
+    ],
   },
 
-  works: [],
-
-  links: {
+  // 7. CONTACT TAB
+  contact: {
     heading: "Contact",
-    cardBio: "be kind! 💖🌸 ",
-    currently: [],
+    description: "", // Leave blank to reuse `profile.description`
     items: [
       { label: "GitHub", sublabel: "sachikofukuari", url: "https://github.com/sachikofukuari", icon: "github" },
       { label: "Discord", sublabel: "@sachikofukuari", url: "https://discord.com/", icon: "discord" },
-      { label: "Tools & Setup", sublabel: "Software, peripherals, and daily workflow", url: "#tools", icon: "keyboard" },
+      { label: "Tools & Setup", sublabel: "Software, coding tools, and peripherals", url: "#tools", icon: "keyboard" },
     ],
   },
 };
