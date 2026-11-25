@@ -999,6 +999,8 @@ export function createLotusScene(canvas, options) {
           push.x /= uLens.y;
           p += push;
 
+          gl_Position = vec4(p, dep * 1.0017 - 0.18, dep);
+
           float sizePx = (ptSize * uLens.z * uLens.x * 0.5) / max(0.65, dep);
           float flyShrink = 1.0 - fly * blossom * (1.0 - isHeart) * (1.0 - isAura) * 0.22;
           float finalPtSize = sizePx * flyShrink;
