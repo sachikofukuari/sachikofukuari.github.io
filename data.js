@@ -47,7 +47,8 @@ window.PORTFOLIO_DATA = {
     subName: "(幸子福有)",
     tag: "@sachikofukuari",
     description: "be kind! 💖🌸 ",
-    banner: "assets/images/banner.jpg?v=9",
+    banner: "assets/images/banner.jpg",
+    bannerWebp: "assets/images/banner.webp",
     bannerCredit: "Art by Takeshima Eku",
     // Your Discord User ID (auto-syncs your current Discord profile picture)
     discordUserId: "732043268946133133",
@@ -99,11 +100,11 @@ window.PORTFOLIO_DATA = {
   // Leave `image: ""` to show the clean badge/icon instead.
   tools: {
     heading: "Tools & Setup",
-    subtitle: "Creative apps, coding tools, and setup essentials. Click any card for details.",
+    subtitle: "Creative apps, coding tools, and daily setup essentials.",
     emptyText: "to be updated",
     vi: {
       heading: "Công cụ & Thiết lập",
-      subtitle: "Ứng dụng sáng tạo, công cụ lập trình và thiết bị hàng ngày. Nhấn vào từng thẻ để xem chi tiết.",
+      subtitle: "Ứng dụng sáng tạo, công cụ lập trình và thiết bị hàng ngày.",
       emptyText: "sẽ cập nhật sau",
       groups: {
         Software: "Phần mềm",

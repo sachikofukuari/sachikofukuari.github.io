@@ -1,6 +1,6 @@
 @font-face {
   font-family: "1FTV VIP Alpha Brights";
-  src: url("assets/fonts/1FTV-VIP-Alpha-Brights.ttf") format("truetype");
+  src: url("assets/fonts/1FTV-VIP-Alpha-Brights.woff2") format("woff2");
   font-style: normal;
   font-weight: 100 900;
   font-display: swap;
@@ -462,7 +462,7 @@ body[data-stage="open"] .intro-stage {
 }
 
 .intro-hitarea:focus-visible .intro-copy {
-  outline: 2px solid var(--accent-2);
+  outline: 2px solid var(--accent);
   outline-offset: 8px;
   border-radius: 16px;
 }
@@ -703,6 +703,14 @@ body[data-transitioning="true"] .portfolio-shell {
   overflow: hidden;
   background: linear-gradient(125deg, color-mix(in srgb, var(--accent) 26%, var(--bg-mid)), var(--bg-hi));
   border-bottom: 1px solid var(--border);
+}
+
+.hero-banner picture {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .hero-banner img,
@@ -1703,10 +1711,28 @@ body[data-transitioning="true"] .portfolio-shell {
     border-color 0.24s ease;
 }
 
-.use-card:hover {
+.use-card-static {
+  cursor: default;
+}
+
+button.use-card:hover {
   transform: translateY(-4px);
   background: var(--card-bg-hover);
   border-color: var(--border-strong);
+}
+
+.contact-identity {
+  align-items: center;
+}
+
+.contact-avatar-frame {
+  margin-top: 0;
+  width: 68px;
+  height: 68px;
+}
+
+.contact-name {
+  font-size: 20px;
 }
 
 .use-card-top {

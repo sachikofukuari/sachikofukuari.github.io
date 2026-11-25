@@ -6,10 +6,7 @@
  * - Pre-renders multi-tone pink petal sprites to offscreen canvases for 60/120fps draw calls.
  * - Automatically pauses on touch input, hidden tab, manual motion pause, or reduced motion.
  */
-(function () {
-  "use strict";
-
-  window.createPetalCursor = function createPetalCursor(canvas, options) {
+export function createPetalCursor(canvas, options) {
     let disposed = false;
     let paused = !!(options && options.paused);
 
@@ -411,5 +408,4 @@
         reducedMQ.removeEventListener("change", onMotionChange);
       },
     };
-  };
-})();
+  }

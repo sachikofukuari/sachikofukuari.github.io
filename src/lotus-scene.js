@@ -9,12 +9,9 @@
  *   non-intersecting staggered petal shells, and velvety subsurface pink glow.
  * - Unhurried C1-smooth two-stage flight curve (fly up -> float down -> gentle air hover).
  */
-(function () {
-  "use strict";
+const TAU = Math.PI * 2;
 
-  const TAU = Math.PI * 2;
-
-  function makeSvgFallbackMarkup() {
+function makeSvgFallbackMarkup() {
     return `
       <svg viewBox="0 0 420 360" width="min(78vw, 440px)" height="auto" aria-hidden="true">
         <defs>
@@ -47,7 +44,7 @@
     `;
   }
 
-  window.createLotusScene = function createLotusScene(canvas, options) {
+export function createLotusScene(canvas, options) {
     const opts = options || {};
     const onFallback = typeof opts.onFallback === "function" ? opts.onFallback : function () {};
     const skyCanvas = opts.skyCanvas || document.getElementById("sky-canvas");
@@ -1980,5 +1977,4 @@
         skyGl?.getExtension("WEBGL_lose_context")?.loseContext();
       },
     };
-  };
-})();
+  }
