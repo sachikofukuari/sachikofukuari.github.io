@@ -982,7 +982,7 @@ export function createLotusScene(canvas, options) {
            float farBlur = smoothstep(32.0, 62.0, dep) * 0.72;
            defocus = max(max(nearBlur, farBlur), settle * (1.0 - blossom * 0.14) * 0.92);
             if (isPad < 0.5) {
-              float nearAlpha = smoothstep(0.7, 1.85, dep);
+              float nearAlpha = smoothstep(0.55, 1.28, dep);
               float farHorizon = 1.0 - smoothstep(54.0, 66.0, dep);
               opacity *= nearAlpha * farHorizon * (1.0 - settle * mix(0.68, 0.52, blossom));
             }
@@ -1006,9 +1006,12 @@ export function createLotusScene(canvas, options) {
           float finalPtSize = sizePx * flyShrink;
           gl_PointSize = clamp(finalPtSize, 1.0, uLens.w);
 
-          // Early cull far meadow & sub-pixel sprites when settled behind open pages
+          float ptMargin = (finalPtSize / max(1.0, uLens.z)) * 1.15;
+          float clipX = dep * (1.06 + ptMargin / max(0.35, uLens.y));
+          float clipY = dep * (1.06 + ptMargin);
+          // Early cull off-screen, far meadow & sub-pixel sprites when settled behind open pages
           float cullFar = mix(68.0, 24.0, step(0.85, settle));
-          if (dep < 0.55 || dep > cullFar || (settle > 0.85 && finalPtSize < 1.6)) {
+          if (dep < 0.55 || dep > cullFar || abs(p.x) > clipX || abs(p.y) > clipY || (settle > 0.85 && finalPtSize < 1.6)) {
             gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
             gl_PointSize = 0.0;
           }
@@ -1049,19 +1052,18 @@ export function createLotusScene(canvas, options) {
 
        void main() {
          vec2 q = gl_PointCoord - 0.5;
+         float q2 = dot(q, q);
          if (vBot.x > 33.9) {
-           float r = dot(q, q);
-           float glow = exp(-r * 16.0) * vColor.w;
+           float glow = exp(-q2 * 16.0) * vColor.w;
            if (glow < 0.004) discard;
-           vec3 auraCol = mix(vec3(0.98, 0.56, 0.77), vec3(1.0, 0.80, 0.91), exp(-r * 36.0));
+           vec3 auraCol = mix(vec3(0.98, 0.56, 0.77), vec3(1.0, 0.80, 0.91), exp(-q2 * 36.0));
            gl_FragColor = vec4(auraCol * glow, glow * 0.38);
            return;
          }
 
          if (vBot.x > 32.9) {
-           float r = dot(q, q);
-           float core = exp(-r * 310.0);
-           float aura = exp(-r * 24.0);
+           float core = exp(-q2 * 310.0);
+           float aura = exp(-q2 * 24.0);
            float a = clamp((core + 0.46 * aura) * vColor.w, 0.0, 1.0);
            if (a < 0.008) discard;
            vec3 fireCol = mix(vec3(1.0, 0.74, 0.85), vec3(1.0, 0.97, 0.88), core);
@@ -1070,10 +1072,12 @@ export function createLotusScene(canvas, options) {
          }
 
          if (vColor.z > 0.5) {
-           float a = exp(-dot(q, q) * 26.0) * (0.12 + vBot.z * 0.32) * vColor.w;
+           float a = exp(-q2 * 26.0) * (0.12 + vBot.z * 0.32) * vColor.w;
            gl_FragColor = vec4(vec3(0.98, 0.84, 0.91) * a, a);
            return;
          }
+
+         if (q2 > 0.248) discard;
 
          vec2 uv = mat2(vRotCS.x, -vRotCS.y, vRotCS.y, vRotCS.x) * q + 0.5;
          if (any(lessThan(uv, vec2(0.003))) || any(greaterThan(uv, vec2(0.997)))) discard;
@@ -1166,13 +1170,24 @@ export function createLotusScene(canvas, options) {
     }
 
     function insideMeadowFrustum(x, z, allowRoot) {
-      if (z < 1.1 || z > 64.0) return false;
-      const maxX = Math.min(23.5, (z + 1.8) * 1.18);
+      if (z < 0.90 || z > 64.0) return false;
+      const maxX = Math.min(22.5, (z + 0.55) * 1.15);
       if (Math.abs(x - valleyCourse(z)) > maxX) return false;
       const dx = x - SAKURA_X;
       const dz = z - SAKURA_Z;
-      const minR = allowRoot ? 0.45 : 2.05;
+      const minR = allowRoot ? 0.45 : 1.15;
       if (Math.hypot(dx, dz) < minR && z > 6.2 && z < 10.5) return false;
+      return true;
+    }
+
+    function insideStaticView(x, y, z, size) {
+      const dep = z + 0.35;
+      if (dep < 0.65 || dep > 66.0) return false;
+      const rad = (size * 1.72 * 0.5) / Math.max(0.65, dep);
+      const nxWide = (x * 1.72) / (2.15 * dep);
+      const ny = ((y - 2.58) * 1.72) / dep - 0.02;
+      if (Math.abs(nxWide) > 1.12 + rad) return false;
+      if (ny < -1.14 - rad || ny > 1.18 + rad) return false;
       return true;
     }
 
@@ -1256,9 +1271,35 @@ export function createLotusScene(canvas, options) {
     let atlasTex = null;
     let particleBuf = null;
     let particleZs = null;
+    let flowerBounds = null;
+    let foliageTotal = 0;
+    let flowerTotal = 0;
     let particleCount = 0;
     let sakuraSplitIndex = 0;
     let sakuraMesh = null;
+
+    function updateSceneStats(focal, aspect) {
+      if (!flowerBounds) return;
+      let vis = 0;
+      for (let i = 0; i < flowerBounds.length; i += 4) {
+        const fx = flowerBounds[i];
+        const fy = flowerBounds[i + 1];
+        const fz = flowerBounds[i + 2];
+        const fsz = flowerBounds[i + 3];
+        const dep = fz + 0.35;
+        if (dep < 0.55 || dep > 68.0) continue;
+        const nx = (fx * focal) / (aspect * dep);
+        const ny = ((fy - 2.58) * focal) / dep - 0.02;
+        const rad = (fsz * focal * 0.5) / Math.max(0.65, dep);
+        if (Math.abs(nx) <= 1.0 + rad / aspect && Math.abs(ny) <= 1.0 + rad) {
+          vis++;
+        }
+      }
+      canvas.dataset.flowersTotal = String(flowerTotal);
+      canvas.dataset.flowersVisible = String(vis);
+      canvas.dataset.foliageTotal = String(foliageTotal);
+      canvas.dataset.spritesTotal = String(particleCount);
+    }
 
     function findSplitIndex(splitZ) {
       if (!particleZs) return sakuraSplitIndex;
@@ -1322,32 +1363,35 @@ export function createLotusScene(canvas, options) {
 
       sakuraMesh = buildSakuraMeshBuffer();
 
-      // 1. Lush Dark-Green Siltora V-Valley Foliage Carpet + Foreground Mossy Mound
-      const foliageCount = lowEnd ? 6800 : 9200;
+      // 1. Lush Dark-Green Siltora V-Valley Foliage Carpet + Foreground Mossy Mound + Targeted Gap Grass
+      const pushGrass = (x, y, z, size, litScale, roleVal) => {
+        if (!insideStaticView(x, y, z, size)) return;
+        const tile = R() < 0.58 ? 8 + Math.floor(R() * 4) : Math.floor(R() * 8);
+        const ang = Math.atan2(z - SAKURA_Z, x - SAKURA_X);
+        const r = Math.hypot(x - SAKURA_X, z - SAKURA_Z);
+        pushParticle(x, y, z, size, tile, R(), litScale, roleVal, ang, r, 0.52 + R() * 0.72, 0.0);
+      };
+
+      const foliageCount = lowEnd ? 5600 : 7500;
       for (let i = 0; i < foliageCount; i++) {
         if (!(i & 511)) await yieldSlice();
-        const z = 1.1 + Math.pow(R(), 1.15) * 60.9;
+        const z = 0.95 + Math.pow(R(), 1.12) * 60.5;
         const side = R() < 0.5 ? -1 : 1;
-        const maxOff = Math.min(23.5, (z + 1.8) * 1.18);
-        const off = side * Math.pow(R(), 1.12) * maxOff;
+        const maxOff = Math.min(22.5, (z + 0.55) * 1.15);
+        const off = side * Math.pow(R(), 1.02) * maxOff;
         const x = off + valleyCourse(z);
         if (!insideMeadowFrustum(x, z, true)) continue;
 
         const y = meadowFloor(x, z) - 0.04 + R() * 0.16;
-        const pSeed = R();
         const patch = 0.5 + 0.5 * S(off * 1.18 + S(z * 0.28) * 1.8) * C(z * 0.34 + off * 0.38);
         const lit = 0.28 + 0.92 * Math.pow(patch, 1.65) + 0.22 * R();
-        const depthMul = z < 2.4 ? 0.84 : z > 14 ? 1.0 + (z - 14) * 0.030 : 1.0;
-        const size = (0.62 + R() * 1.15) * depthMul;
-        const tile = R() < 0.58 ? 8 + Math.floor(R() * 4) : Math.floor(R() * 8);
-        const ang = Math.atan2(z - SAKURA_Z, x - SAKURA_X);
-        const r = Math.hypot(x - SAKURA_X, z - SAKURA_Z);
-        const liftWeight = 0.52 + R() * 0.72;
-        pushParticle(x, y, z, size, tile, pSeed, lit, 0.0, ang, r, liftWeight, 0.0);
+        const depthMul = z < 2.4 ? 0.86 : z > 14 ? 1.0 + (z - 14) * 0.032 : 1.0;
+        const size = (0.65 + R() * 1.18) * depthMul;
+        pushGrass(x, y, z, size, lit, 0.0);
       }
 
       // Dedicated lush foreground central mossy mound framing the lotus root
-      const moundCount = lowEnd ? 520 : 750;
+      const moundCount = lowEnd ? 500 : 720;
       for (let i = 0; i < moundCount; i++) {
         if (!(i & 511)) await yieldSlice();
         const z = 2.6 + R() * 5.0;
@@ -1358,10 +1402,40 @@ export function createLotusScene(canvas, options) {
         const patch = 0.5 + 0.5 * S(off * 1.4) * C(z * 0.65);
         const lit = 0.32 + 0.85 * Math.pow(patch, 1.45) + 0.20 * R();
         const size = 0.64 + R() * 0.94;
-        const tile = R() < 0.58 ? 8 + Math.floor(R() * 4) : Math.floor(R() * 8);
-        const ang = Math.atan2(z - SAKURA_Z, x - SAKURA_X);
-        const r = Math.hypot(x - SAKURA_X, z - SAKURA_Z);
-        pushParticle(x, y, z, size, tile, R(), lit, 0.0, ang, r, 0.48 + R() * 0.55, 0.0);
+        pushGrass(x, y, z, size, lit, 0.0);
+      }
+
+      // Targeted grass patches filling bottom-left, bottom-right, mid-left, around & behind lotus
+      for (let i = 0; i < (lowEnd ? 120 : 180); i++) {
+        const z = 1.80 + R() * 1.30;
+        const x = -3.20 + R() * 2.00 + valleyCourse(z);
+        const y = meadowFloor(x, z) - 0.14 + R() * 0.28;
+        pushGrass(x, y, z, 0.68 + R() * 0.82, 0.42 + R() * 0.65, 0.0);
+      }
+      for (let i = 0; i < (lowEnd ? 170 : 260); i++) {
+        const z = 0.95 + R() * 1.60;
+        const x = 0.75 + R() * 2.10 + valleyCourse(z);
+        const y = meadowFloor(x, z) - 0.34 + R() * 0.38;
+        pushGrass(x, y, z, 0.64 + R() * 0.78, 0.44 + R() * 0.65, 0.0);
+      }
+      for (let i = 0; i < (lowEnd ? 140 : 220); i++) {
+        const z = 3.10 + R() * 4.50;
+        const x = -7.40 + R() * 4.20 + valleyCourse(z);
+        const y = meadowFloor(x, z) - 0.10 + R() * 0.26;
+        pushGrass(x, y, z, 0.70 + R() * 0.90, 0.44 + R() * 0.68, 0.0);
+      }
+      for (let i = 0; i < (lowEnd ? 110 : 160); i++) {
+        const z = 6.00 + R() * 4.60;
+        const x = (R() * 2 - 1) * 3.50;
+        if (Math.hypot(x - SAKURA_X, z - SAKURA_Z) < 0.85) continue;
+        const y = meadowFloor(x, z) + 0.04 + R() * 0.24;
+        pushGrass(x, y, z, 0.66 + R() * 0.84, 0.48 + R() * 0.68, 0.0);
+      }
+      for (let i = 0; i < (lowEnd ? 100 : 160); i++) {
+        const z = 10.0 + R() * 10.0;
+        const x = (R() * 2 - 1) * 3.80 + valleyCourse(z);
+        const y = meadowFloor(x, z) + 0.12 + R() * 0.26;
+        pushGrass(x, y, z, 0.72 + R() * 0.88, 0.44 + R() * 0.66, 0.0);
       }
 
       // 2. Siltora-Style Cascading Diagonal Wildflower Streams (Abundant Pastel Pink + Scattered Pastel Blue)
@@ -1379,7 +1453,7 @@ export function createLotusScene(canvas, options) {
           if (!insideMeadowFrustum(bx, z, false)) continue;
           const distScale = z > 12 ? 1.0 + (z - 12) * 0.036 : 1.0;
           const k = kChoices[Math.floor(R() * kChoices.length)];
-          beds.push([bx, z, k, wBase * distScale * (0.85 + R() * 0.35), dBase * distScale * (0.85 + R() * 0.35), litBoost]);
+          beds.push([bx, z, k, wBase * distScale * (0.85 + R() * 0.35), dBase * distScale * (0.85 + R() * 0.35), litBoost, 0]);
         }
       }
 
@@ -1426,7 +1500,40 @@ export function createLotusScene(canvas, options) {
         [-1.2, 4.5, 2, 0.90, 0.84, 0.94],
         [1.3, 4.6, 6, 0.90, 0.84, 0.94],
         [-5.5, 5.2, 0, 1.12, 1.04, 0.95],
-        [5.6, 5.3, 4, 1.12, 1.04, 0.95]
+        [5.6, 5.3, 4, 1.12, 1.04, 0.95],
+        // 1. Bottom-left corner fill
+        [-2.35, 2.25, 2, 0.92, 0.75, 0.95, -0.04],
+        [-1.85, 2.10, 6, 0.88, 0.72, 0.95, -0.06],
+        [-2.85, 2.55, 0, 0.96, 0.78, 0.95, -0.05],
+        // 2. Bottom-right corner fill
+        [0.88, 1.45, 6, 0.74, 0.56, 0.95, -0.18],
+        [1.20, 1.32, 1, 0.76, 0.54, 0.95, -0.22],
+        [1.62, 1.48, 7, 0.82, 0.58, 0.95, -0.28],
+        [2.05, 1.75, 3, 0.88, 0.66, 0.95, -0.32],
+        [2.48, 2.12, 5, 0.92, 0.72, 0.95, -0.28],
+        // 3. Mid-left edge fill
+        [-3.95, 3.65, 3, 0.96, 0.86, 0.95, 0.04],
+        [-4.75, 4.55, 6, 1.04, 0.94, 0.96, 0.06],
+        [-5.55, 5.45, 1, 1.08, 0.98, 0.96, 0.04],
+        [-6.45, 6.40, 7, 1.12, 1.02, 0.96, 0.02],
+        // 4. Around the big lotus flower (flanking collar & lower front apron)
+        [-1.55, 6.85, 0, 0.86, 0.78, 0.95, 0.16],
+        [1.55, 6.85, 4, 0.86, 0.78, 0.95, 0.24],
+        [-2.35, 8.15, 6, 0.94, 0.90, 0.95, 0.22],
+        [2.35, 8.15, 2, 0.94, 0.90, 0.95, 0.34],
+        [-1.50, 8.55, 1, 0.76, 0.74, 0.95, 0.24],
+        [1.50, 8.55, 7, 0.76, 0.74, 0.95, 0.36],
+        [0.0, 6.45, 2, 0.92, 0.68, 0.94, 0.14],
+        // 5. Behind the big lotus flower (kept in lower/mid silhouette below sky text)
+        [-1.85, 10.6, 5, 1.05, 0.95, 0.95, 0.30],
+        [0.0, 10.8, 0, 1.15, 0.95, 0.94, 0.42],
+        [1.85, 10.6, 6, 1.05, 0.95, 0.95, 0.40],
+        [-2.55, 13.2, 2, 1.18, 1.10, 0.95, 0.28],
+        [0.0, 13.5, 7, 1.25, 1.15, 0.94, 0.46],
+        [2.55, 13.2, 1, 1.18, 1.10, 0.95, 0.38],
+        [-1.90, 16.8, 3, 1.28, 1.25, 0.95, 0.30],
+        [0.0, 17.2, 4, 1.30, 1.25, 0.94, 0.44],
+        [1.90, 16.8, 6, 1.28, 1.25, 0.95, 0.36]
       );
 
       // Midground valley pockets on slopes + sparse faint center canyon floor wisps
@@ -1434,30 +1541,30 @@ export function createLotusScene(canvas, options) {
       for (let b = 0; b < pocketCount; b++) {
         const z = 4.4 + Math.pow(R(), 0.94) * 48.6;
         const side = R() < 0.5 ? -1 : 1;
-        const maxOff = Math.min(23.0, (z + 1.8) * 1.16);
+        const maxOff = Math.min(22.0, (z + 0.55) * 1.14);
         const minOff = z > 10.5 ? 2.0 : 1.15;
         const off = side * (minOff + Math.pow(R(), 0.84) * Math.max(1.0, maxOff - minOff));
         const bx = off + valleyCourse(z);
         if (!insideMeadowFrustum(bx, z, false)) continue;
         const distScale = z > 12 ? 1.0 + (z - 12) * 0.036 : 1.0;
-        beds.push([bx, z, Math.floor(R() * 8), (0.74 + R() * 0.82) * distScale, (0.80 + R() * 1.12) * distScale, 0.95]);
+        beds.push([bx, z, Math.floor(R() * 8), (0.74 + R() * 0.82) * distScale, (0.80 + R() * 1.12) * distScale, 0.95, 0]);
       }
 
       for (let b = 0; b < beds.length; b++) {
         await yieldSlice();
-        const [bx, bz, k, w, d, litBoost] = beds[b];
+        const [bx, bz, k, w, d, litBoost, yBoost = 0] = beds[b];
         const families = bz < 9.5
           ? Math.min(26, Math.round(w * d * 6.0 + 6))
           : bz < 22.0
             ? Math.min(19, Math.round(w * d * 4.4 + 4))
-            : Math.min(14, Math.round(w * d * 3.4 + 3));
+            : Math.min(11, Math.round(w * d * 2.8 + 2));
         for (let f = 0; f < families; f++) {
           const a = R() * TAU;
           const rr = Math.sqrt(R());
           const fx = bx + C(a) * rr * w * 1.18;
           const fz = bz + S(a) * rr * d * 1.18;
           const fOff = fx - valleyCourse(fz);
-          if (fz > 11.5 && Math.abs(fOff) < 1.25 && R() < 0.80) continue;
+          if (fz > 24.0 && Math.abs(fOff) < 1.15 && R() < 0.65) continue;
           if (!insideMeadowFrustum(fx, fz, false)) continue;
           const baseFl = (0.29 + R() * 0.25) * (fz > 14 ? 1.0 + (fz - 14) * 0.044 : 1.0);
           const lf = (0.90 + R() * 0.12) * litBoost;
@@ -1470,7 +1577,9 @@ export function createLotusScene(canvas, options) {
           for (let i = 0; i < clusterCount; i++) {
             const xx = fx + (R() - 0.5) * clusterSpread;
             const zz = fz + (R() - 0.5) * clusterSpread;
-            const yy = meadowFloor(xx, zz) + 0.24 + R() * 0.22;
+            const yy = meadowFloor(xx, zz) + 0.24 + yBoost + R() * 0.22;
+            const flSize = baseFl * (0.58 + R() * 0.76);
+            if (!insideStaticView(xx, yy, zz, flSize)) continue;
             const kk = R() < 0.74 ? k : (R() < 0.65 ? 6 + Math.floor(R() * 2) : (k + 2) % 6);
             const tileId = 16 + kk + (R() < 0.5 ? 8 : 0);
             const ang = Math.atan2(zz - SAKURA_Z, xx - SAKURA_X);
@@ -1479,7 +1588,7 @@ export function createLotusScene(canvas, options) {
               xx,
               yy,
               zz,
-              baseFl * (0.58 + R() * 0.76),
+              flSize,
               tileId,
               R(),
               lf * (0.94 + R() * 0.10),
@@ -1552,10 +1661,24 @@ export function createLotusScene(canvas, options) {
 
       particleZs = new Float32Array(particleCount);
       const packed = new Float32Array(particleCount * 12);
+      const flTemp = [];
+      let fCount = 0;
+      let gCount = 0;
       for (let i = 0; i < particleCount; i++) {
-        particleZs[i] = particles[i][2];
-        packed.set(particles[i], i * 12);
+        const pt = particles[i];
+        particleZs[i] = pt[2];
+        packed.set(pt, i * 12);
+        const tileId = pt[4];
+        if (tileId >= 16 && tileId < 32) {
+          flTemp.push(pt[0], pt[1], pt[2], pt[3]);
+          fCount++;
+        } else if (tileId < 12) {
+          gCount++;
+        }
       }
+      flowerTotal = fCount;
+      foliageTotal = gCount;
+      flowerBounds = new Float32Array(flTemp);
       particles.length = 0;
       particleBuf = makeBuffer(packed);
 
@@ -1652,7 +1775,7 @@ export function createLotusScene(canvas, options) {
         Math.abs(settleTarget - settleMix) > 0.004;
 
       const pointerActive = now - lastPointerMoveMs < 550;
-      const settledOpen = settleMix > 0.94 && !animating && bloomTarget === 1;
+      const settledOpen = settleMix > 0.92 && bloomTarget === 1 && Math.abs(bloomTarget - bloomMix) < 0.02;
       const minGap = animating ? 0 : settledOpen ? 45 : pointerActive ? 16 : 33;
 
       const gap = now - (lastNow || now - 16);
@@ -1722,15 +1845,15 @@ export function createLotusScene(canvas, options) {
       );
       const W = Math.max(2, Math.round(cw * dpr));
       const H = Math.max(2, Math.round(ch * dpr));
+      const aspect = W / H;
+      const focal = aspect < 0.85 ? 1.18 : 1.72;
 
       if (widthPx !== W || heightPx !== H) {
         canvas.width = widthPx = W;
         canvas.height = heightPx = H;
         gl.viewport(0, 0, widthPx, heightPx);
+        updateSceneStats(focal, aspect);
       }
-
-      const aspect = widthPx / heightPx;
-      const focal = aspect < 0.85 ? 1.18 : 1.72;
       const camX = ax * 0.18 + (isReduced ? 0 : 0.14 * S(tClock * 0.25));
       const camY = 2.58 + (isReduced ? 0 : 0.05 * S(tClock * 0.34));
       const camZ = -0.35;
