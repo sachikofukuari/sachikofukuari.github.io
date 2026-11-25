@@ -4,13 +4,13 @@
  * ============================================================================
  * Everything you normally update lives in this one file:
  * - Optional Cloudflare Worker backend URL (1-line upgrade)
- * - Intro text
- * - Profile (name, subName, tag, description, banner, Discord avatar)
+ * - Intro text (English + Vietnamese under `vi`)
+ * - Profile (name, subName, tag, description, banner, bannerCredit, Discord ID)
  * - Favourite song (YouTube URL, start time, default volume, title, artist)
  * - Live vitals (Pulsoid heart rate + local time)
  * - Tools (Software & Peripherals — leave [] to show "to be updated")
  * - Works (leave [] to show a clean "to be updated" example card)
- * - Contact links
+ * - Contact links & shared UI strings (`ui`)
  *
  * See CONTENT_GUIDE.md for step-by-step copy-paste examples & image tips.
  */
@@ -28,6 +28,11 @@ window.PORTFOLIO_DATA = {
     greeting: "Hello, im Ari",
     cue: "scroll or click",
     lotusAriaLabel: "Bloom lotus to enter portfolio",
+    vi: {
+      greeting: "Xin chào, mình là Ari",
+      cue: "cuộn hoặc nhấn",
+      lotusAriaLabel: "Nở hoa sen để vào trang cá nhân",
+    },
   },
 
   decorations: {
@@ -40,11 +45,17 @@ window.PORTFOLIO_DATA = {
     subName: "(幸子福有)",
     tag: "@sachikofukuari",
     description: "be kind! 💖🌸 ",
-    banner: "assets/images/banner.jpg?v=6",
+    banner: "assets/images/banner.jpg?v=7",
+    bannerCredit: "Art by Takeshima Eku",
     // Your Discord User ID (auto-syncs your current Discord profile picture)
     discordUserId: "732043268946133133",
     avatarFallback: "https://cdn.discordapp.com/avatars/732043268946133133/c232585fd1847e1c3666537a61429aa1.webp?size=256",
     contactButtonLabel: "contact",
+    vi: {
+      description: "hãy luôn tử tế nhé! 💖🌸 ",
+      bannerCredit: "Tranh bởi Takeshima Eku",
+      contactButtonLabel: "liên hệ",
+    },
   },
 
   // 3. FAVOURITE SONG WIDGET (LEFT HOME WIDGET)
@@ -59,6 +70,9 @@ window.PORTFOLIO_DATA = {
     artist: "Hà Anh Tuấn ft. Thu Phương",
     album: "Sketch a Rose",
     coverImage: "",
+    vi: {
+      heading: "bài hát yêu thích lúc này",
+    },
   },
 
   // 4. LIVE VITALS WIDGET (RIGHT HOME WIDGET)
@@ -66,9 +80,17 @@ window.PORTFOLIO_DATA = {
     heading: "live vitals",
     timezone: "Asia/Ho_Chi_Minh",
     timezoneLabel: "UTC+7",
+    liveLabel: "live",
     offlineNote: "monitor not on right now",
+    localTimeLabel: "local time",
     pulsoidWsUrl: "wss://dev.pulsoid.net/api/v1/data/real_time?access_token=859d5fed-9af3-4f09-bc8f-98cd4c5df159&response_mode=legacy_json",
     offlineTimeoutMs: 15000,
+    vi: {
+      heading: "nhịp tim trực tiếp",
+      liveLabel: "trực tiếp",
+      offlineNote: "máy đo hiện chưa bật",
+      localTimeLabel: "giờ địa phương",
+    },
   },
 
   // 5. TOOLS TAB (SOFTWARE & PERIPHERALS)
@@ -78,6 +100,15 @@ window.PORTFOLIO_DATA = {
     heading: "Tools & Setup",
     subtitle: "Creative apps, coding tools, and setup essentials. Click any card for details.",
     emptyText: "to be updated",
+    vi: {
+      heading: "Công cụ & Thiết lập",
+      subtitle: "Ứng dụng sáng tạo, công cụ lập trình và thiết bị hàng ngày. Nhấn vào từng thẻ để xem chi tiết.",
+      emptyText: "sẽ cập nhật sau",
+      groups: {
+        Software: "Phần mềm",
+        Peripherals: "Thiết bị",
+      },
+    },
 
     software: [
       /* Copy & paste this template to add another Software item:
@@ -92,6 +123,12 @@ window.PORTFOLIO_DATA = {
         image: "", // optional: "assets/images/example.png"
         description: "One or two sentences about how you use it.",
         url: "https://example.com",
+        vi: {
+          subtitle: "danh mục ngắn",
+          tag: "hãng / bộ công cụ",
+          status: "hàng ngày",
+          description: "Mô tả ngắn bằng tiếng Việt.",
+        },
       },
       */
       {
@@ -105,6 +142,12 @@ window.PORTFOLIO_DATA = {
         image: "",
         description: "Vector illustration, logos, iconography, and scalable artwork.",
         url: "https://www.adobe.com/products/illustrator.html",
+        vi: {
+          subtitle: "vector & nhận diện",
+          tag: "adobe creative cloud",
+          status: "hàng ngày",
+          description: "Vẽ minh họa vector, thiết kế logo, biểu tượng và đồ họa sắc nét ở mọi kích thước.",
+        },
       },
       {
         id: "adobe-pr",
@@ -117,6 +160,12 @@ window.PORTFOLIO_DATA = {
         image: "",
         description: "Timeline video editing, pacing, audio mixing, and color grading.",
         url: "https://www.adobe.com/products/premiere.html",
+        vi: {
+          subtitle: "dựng phim & video",
+          tag: "adobe creative cloud",
+          status: "hàng ngày",
+          description: "Dựng video theo timeline, căn nhịp, hòa âm và chỉnh màu.",
+        },
       },
       {
         id: "adobe-ps",
@@ -129,6 +178,12 @@ window.PORTFOLIO_DATA = {
         image: "",
         description: "Photo retouching, compositing, key visuals, and digital painting.",
         url: "https://www.adobe.com/products/photoshop.html",
+        vi: {
+          subtitle: "ảnh & đồ họa",
+          tag: "adobe creative cloud",
+          status: "hàng ngày",
+          description: "Chỉnh sửa ảnh, ghép hình, thiết kế key visual và vẽ kỹ thuật số.",
+        },
       },
       {
         id: "adobe-id",
@@ -141,6 +196,12 @@ window.PORTFOLIO_DATA = {
         image: "",
         description: "Editorial layouts, typography systems, booklets, and print spreads.",
         url: "https://www.adobe.com/products/indesign.html",
+        vi: {
+          subtitle: "dàn trang & ấn phẩm",
+          tag: "adobe creative cloud",
+          status: "hàng ngày",
+          description: "Bố cục tạp chí, hệ thống chữ, sách nhỏ và ấn phẩm in ấn.",
+        },
       },
       {
         id: "vscode",
@@ -153,6 +214,12 @@ window.PORTFOLIO_DATA = {
         image: "",
         description: "Primary code editor for web builds, creative coding, and daily projects.",
         url: "https://code.visualstudio.com/",
+        vi: {
+          subtitle: "trình soạn thảo mã",
+          tag: "lập trình",
+          status: "hàng ngày",
+          description: "Trình soạn thảo chính để xây dựng web, viết mã sáng tạo và các dự án hàng ngày.",
+        },
       },
       {
         id: "gemini",
@@ -165,6 +232,12 @@ window.PORTFOLIO_DATA = {
         image: "",
         description: "AI companion for brainstorming, coding workflows, and debugging.",
         url: "https://gemini.google.com/",
+        vi: {
+          subtitle: "trợ lý ai",
+          tag: "lập trình & ai",
+          status: "hàng ngày",
+          description: "Trợ lý AI đồng hành cùng lên ý tưởng, viết mã và gỡ lỗi.",
+        },
       },
     ],
 
@@ -193,6 +266,14 @@ window.PORTFOLIO_DATA = {
     heading: "Works",
     subtitle: "",
     emptyText: "to be updated",
+    vi: {
+      heading: "Tác phẩm",
+      subtitle: "",
+      emptyText: "sẽ cập nhật sau",
+      pillLabel: "tác phẩm",
+      soonLabel: "sắp ra mắt",
+      allFilter: "Tất cả",
+    },
     items: [
       /* Copy & paste this template to add a project/work:
       {
@@ -216,9 +297,73 @@ window.PORTFOLIO_DATA = {
   contact: {
     heading: "Contact",
     description: "", // Leave blank to reuse `profile.description`
+    vi: {
+      heading: "Liên hệ",
+      description: "",
+    },
     items: [
       { label: "GitHub", sublabel: "sachikofukuari", url: "https://github.com/sachikofukuari", icon: "github" },
       { label: "Discord", sublabel: "@sachikofukuari", url: "https://discord.com/", icon: "discord" },
     ],
+  },
+
+  // 8. INTERFACE LABELS (EN / VI)
+  ui: {
+    en: {
+      navHome: "home",
+      navTools: "tools",
+      navWorks: "works",
+      navContact: "contact",
+      backToIntro: "Back to intro",
+      pauseMotion: "Pause motion",
+      playMotion: "Play motion",
+      switchLangLabel: "Chuyển sang Tiếng Việt",
+      closeDetails: "Close details",
+      copyHandle: "Copy handle",
+      copyLink: "Copy page link",
+      copiedPrefix: "Copied",
+      copiedLink: "Copied portfolio link",
+      copiedFallback: "Copied value:",
+      visitLink: "Visit link ↗",
+      goToTab: "Go to",
+      playSong: "Play song",
+      pauseSong: "Pause song",
+      muteSong: "Mute",
+      unmuteSong: "Unmute",
+      seekTrack: "Seek track",
+      volumeLabel: "Volume",
+      openInYtMusic: "Open in YouTube Music",
+      jumpToHomePlayer: "Jump to Home player",
+      stopMiniPlayer: "Stop and hide mini player",
+      bpmUnit: "bpm",
+    },
+    vi: {
+      navHome: "trang chủ",
+      navTools: "công cụ",
+      navWorks: "tác phẩm",
+      navContact: "liên hệ",
+      backToIntro: "Quay lại màn hình chính",
+      pauseMotion: "Tạm dừng chuyển động",
+      playMotion: "Tiếp tục chuyển động",
+      switchLangLabel: "Switch to English",
+      closeDetails: "Đóng chi tiết",
+      copyHandle: "Sao chép tên",
+      copyLink: "Sao chép liên kết",
+      copiedPrefix: "Đã sao chép",
+      copiedLink: "Đã sao chép liên kết trang",
+      copiedFallback: "Đã sao chép:",
+      visitLink: "Mở liên kết ↗",
+      goToTab: "Đi tới",
+      playSong: "Phát nhạc",
+      pauseSong: "Tạm dừng",
+      muteSong: "Tắt tiếng",
+      unmuteSong: "Bật tiếng",
+      seekTrack: "Tua nhạc",
+      volumeLabel: "Âm lượng",
+      openInYtMusic: "Mở trong YouTube Music",
+      jumpToHomePlayer: "Về trình phát trang chủ",
+      stopMiniPlayer: "Dừng và ẩn trình phát thu gọn",
+      bpmUnit: "nhịp/p",
+    },
   },
 };

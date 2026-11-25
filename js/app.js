@@ -29,8 +29,35 @@
   const bottomNav = document.getElementById("bottom-nav");
   const navButtons = Array.from(document.querySelectorAll(".bottom-nav-btn[data-tab]"));
 
+  const btnLangToggle = document.getElementById("btn-lang-toggle");
   const btnMotionToggle = document.getElementById("btn-motion-toggle");
-  const motionLabel = btnMotionToggle?.querySelector(".motion-label");
+  const navLabelEls = Array.from(document.querySelectorAll("[data-nav-label]"));
+  const miniPlayerOpenHome = document.getElementById("mini-player-open-home");
+  const miniPlayerClose = document.getElementById("mini-player-close");
+
+  let currentLang = (() => {
+    try {
+      return localStorage.getItem("portfolio-lang") === "vi" ? "vi" : "en";
+    } catch {
+      return "en";
+    }
+  })();
+
+  function uiStr(key) {
+    return DATA.ui?.[currentLang]?.[key] ?? DATA.ui?.en?.[key] ?? "";
+  }
+
+  function loc(obj, field, fallback = "") {
+    if (currentLang === "vi" && obj?.vi && obj.vi[field] !== undefined && obj.vi[field] !== "") {
+      return obj.vi[field];
+    }
+    return obj?.[field] !== undefined ? obj[field] : fallback;
+  }
+
+  const FLAG_VN_SVG =
+    '<svg class="lang-flag-svg" viewBox="0 0 30 20" aria-hidden="true"><rect width="30" height="20" fill="#da251d"/><polygon fill="#ffff00" points="15,4 16.55,8.76 21.55,8.76 17.5,11.7 19.05,16.46 15,13.52 10.95,16.46 12.5,11.7 8.45,8.76 13.45,8.76"/></svg>';
+  const FLAG_EN_SVG =
+    '<svg class="lang-flag-svg" viewBox="0 0 30 20" aria-hidden="true"><clipPath id="uk-clip"><rect width="30" height="20"/></clipPath><g clip-path="url(#uk-clip)"><rect width="30" height="20" fill="#012169"/><path d="M0,0 L30,20 M30,0 L0,20" stroke="#ffffff" stroke-width="4"/><path d="M0,0 L30,20 M30,0 L0,20" stroke="#c8102e" stroke-width="2"/><path d="M15,0 V20 M0,10 H30" stroke="#ffffff" stroke-width="6"/><path d="M15,0 V20 M0,10 H30" stroke="#c8102e" stroke-width="3.6"/></g></svg>';
 
   const itemDialog = document.getElementById("item-dialog");
   const dialogEyebrow = document.getElementById("dialog-eyebrow");
@@ -476,12 +503,13 @@
       })
     : null;
 
-  if (introCueEl && DATA.intro?.cue) {
-    introCueEl.textContent = DATA.intro.cue;
+  const introGreetingText = loc(DATA.intro, "greeting", "Hello, im Ari");
+  if (introCueEl) {
+    introCueEl.textContent = loc(DATA.intro, "cue", "scroll or click");
   }
-  if (introTrigger && DATA.intro?.lotusAriaLabel) {
-    const greetPrefix = DATA.intro?.greeting ? `${DATA.intro.greeting} — ` : "";
-    introTrigger.setAttribute("aria-label", `${greetPrefix}${DATA.intro.lotusAriaLabel}`);
+  if (introTrigger) {
+    const ariaAction = loc(DATA.intro, "lotusAriaLabel", "Bloom lotus to enter portfolio");
+    introTrigger.setAttribute("aria-label", introGreetingText ? `${introGreetingText} — ${ariaAction}` : ariaAction);
   }
   syncDiscordAvatar(true);
 
@@ -721,7 +749,7 @@
   window.addEventListener("pageshow", () => setPageInactive(false));
 
   if (introGreeting) {
-    buildGreetingChars(DATA.intro?.greeting ?? "Hello, im Ari");
+    buildGreetingChars(loc(DATA.intro, "greeting", "Hello, im Ari"));
     measureGreetingChars();
     document.fonts?.ready?.then(() => {
       measureGreetingChars();
@@ -747,20 +775,86 @@
   }
 
   // --------------------------------------------------------------------------
-  // Motion Toggle
+  // Motion Toggle & Bilingual Switcher (EN <-> VI)
   // --------------------------------------------------------------------------
 
   function syncMotionUi() {
     htmlEl.dataset.motion = motionPaused ? "paused" : "running";
-    if (btnMotionToggle && motionLabel) {
-      const label = motionPaused ? "Play motion" : "Pause motion";
-      motionLabel.textContent = label;
+    if (btnMotionToggle) {
+      const label = motionPaused ? uiStr("playMotion") : uiStr("pauseMotion");
       btnMotionToggle.setAttribute("aria-label", label);
+      btnMotionToggle.setAttribute("title", label);
     }
     lotusScene?.setPaused(motionPaused);
     petalCursor?.setPaused(motionPaused);
     if (motionPaused) resetGreetingMotion();
   }
+
+  function applyLanguageUi(rerenderOpen = false) {
+    htmlEl.lang = currentLang;
+    htmlEl.dataset.lang = currentLang;
+    try {
+      localStorage.setItem("portfolio-lang", currentLang);
+    } catch {
+      // Ignore storage failures
+    }
+
+    if (btnLangToggle) {
+      // Show Vietnamese flag when currently in English (click -> VN), and UK flag when in Vietnamese (click -> EN)
+      btnLangToggle.innerHTML = currentLang === "en" ? FLAG_VN_SVG : FLAG_EN_SVG;
+      const tip = uiStr("switchLangLabel");
+      btnLangToggle.setAttribute("aria-label", tip);
+      btnLangToggle.setAttribute("title", tip);
+    }
+
+    if (btnBackIntro) {
+      const backLabel = uiStr("backToIntro");
+      btnBackIntro.setAttribute("aria-label", backLabel);
+      btnBackIntro.setAttribute("title", backLabel);
+    }
+
+    const navKeys = { home: "navHome", tools: "navTools", works: "navWorks", contact: "navContact" };
+    navLabelEls.forEach((el) => {
+      const key = navKeys[el.dataset.navLabel];
+      if (key) el.textContent = uiStr(key);
+    });
+
+    if (dialogClose) {
+      dialogClose.setAttribute("aria-label", uiStr("closeDetails"));
+    }
+    if (miniPlayerOpenHome) {
+      miniPlayerOpenHome.setAttribute("title", uiStr("jumpToHomePlayer"));
+    }
+    if (miniPlayerClose) {
+      miniPlayerClose.setAttribute("aria-label", uiStr("stopMiniPlayer"));
+    }
+
+    const greet = loc(DATA.intro, "greeting", "Hello, im Ari");
+    if (introGreeting) {
+      buildGreetingChars(greet);
+      requestAnimationFrame(measureGreetingChars);
+    }
+    if (introCueEl) {
+      introCueEl.textContent = loc(DATA.intro, "cue", "scroll or click");
+    }
+    if (introTrigger) {
+      const ariaAction = loc(DATA.intro, "lotusAriaLabel", "Bloom lotus to enter portfolio");
+      introTrigger.setAttribute("aria-label", greet ? `${greet} — ${ariaAction}` : ariaAction);
+    }
+
+    syncMotionUi();
+    syncMiniPlayerDom();
+    if (rerenderOpen && stage === "open") {
+      renderActiveView();
+    } else {
+      updateVitalsDom();
+    }
+  }
+
+  btnLangToggle?.addEventListener("click", () => {
+    currentLang = currentLang === "en" ? "vi" : "en";
+    applyLanguageUi(true);
+  });
 
   btnMotionToggle?.addEventListener("click", () => {
     motionPaused = !motionPaused;
@@ -777,9 +871,10 @@
   }
 
   function renderUseCardHtml(item) {
-    const title = item.title || item.name || "";
-    const subtitle = item.subtitle || item.category || "";
-    const tag = item.tag || item.brand || "";
+    const title = loc(item, "title", item.name || "");
+    const subtitle = loc(item, "subtitle", item.category || "");
+    const tag = loc(item, "tag", item.brand || "");
+    const status = loc(item, "status", "in use");
     const visualHtml = item.image
       ? `<img src="${esc(item.image)}" alt="${esc(title)}" loading="lazy" data-fallback="true" data-kind="gear" data-icon-type="${esc(item.iconType || "palette")}">`
       : item.badge
@@ -789,7 +884,7 @@
     return `
       <button class="use-card" type="button" data-use-id="${esc(item.id)}">
         <div class="use-card-top">
-          <span>${esc(item.status || "in use")}</span>
+          <span>${esc(status)}</span>
         </div>
         <div class="use-card-visual">${visualHtml}</div>
         <div class="use-card-meta">
@@ -802,16 +897,17 @@
   }
 
   function renderPlaceholderToolCardHtml(groupLabel, emptyText) {
+    const labelLower = String(groupLabel || "").toLowerCase();
     return `
       <div class="use-card placeholder-widget-card" aria-label="${esc(groupLabel)} ${esc(emptyText)}">
         <div class="use-card-top">
-          <span>${esc(groupLabel.toLowerCase())}</span>
+          <span>${esc(labelLower)}</span>
         </div>
         <div class="use-card-visual">
           <div class="placeholder-slot-icon" aria-hidden="true">${getSmallIconSvg("sparkle")}</div>
         </div>
         <div class="use-card-meta">
-          <span class="use-card-cat">${esc(groupLabel.toLowerCase())}</span>
+          <span class="use-card-cat">${esc(labelLower)}</span>
           <span class="use-card-name placeholder-title">${esc(emptyText)}</span>
         </div>
       </div>
@@ -819,9 +915,12 @@
   }
 
   function renderWorkCardHtml(work) {
-    const summary = work.description || work.summary || "";
+    const title = loc(work, "title", "");
+    const category = loc(work, "category", "work");
+    const status = loc(work, "status", "");
+    const summary = loc(work, "description", work.summary || "");
     const coverHtml = work.image
-      ? `<img src="${esc(work.image)}" alt="${esc(work.title)}" loading="lazy" data-fallback="true" data-kind="work" data-seed="${esc(work.gradientSeed || 1)}">`
+      ? `<img src="${esc(work.image)}" alt="${esc(title)}" loading="lazy" data-fallback="true" data-kind="work" data-seed="${esc(work.gradientSeed || 1)}">`
       : getWorkCoverSvg(work.gradientSeed || 1);
 
     return `
@@ -829,10 +928,10 @@
         <div class="work-cover">${coverHtml}</div>
         <div class="work-body">
           <div class="work-top">
-            <span class="work-cat-pill">${esc(work.category || "work")}</span>
-            <span>${esc(work.year || "")}${work.status ? ` · ${esc(work.status)}` : ""}</span>
+            <span class="work-cat-pill">${esc(category)}</span>
+            <span>${esc(work.year || "")}${status ? ` · ${esc(status)}` : ""}</span>
           </div>
-          <h3 class="work-title">${esc(work.title)}</h3>
+          <h3 class="work-title">${esc(title)}</h3>
           <p class="work-summary">${esc(summary)}</p>
           <div class="work-tags">
             ${(work.tags || []).map((t) => `<span class="work-tag">${esc(t)}</span>`).join("")}
@@ -842,16 +941,16 @@
     `;
   }
 
-  function renderPlaceholderWorkCardHtml(emptyText) {
+  function renderPlaceholderWorkCardHtml(emptyText, pillLabel, soonLabel) {
     return `
-      <div class="work-card placeholder-widget-card" aria-label="Works ${esc(emptyText)}">
+      <div class="work-card placeholder-widget-card" aria-label="${esc(pillLabel)} ${esc(emptyText)}">
         <div class="work-cover placeholder-work-cover" aria-hidden="true">
           <div class="placeholder-slot-icon">${getSmallIconSvg("sparkle")}</div>
         </div>
         <div class="work-body">
           <div class="work-top">
-            <span class="work-cat-pill">works</span>
-            <span>soon</span>
+            <span class="work-cat-pill">${esc(pillLabel)}</span>
+            <span>${esc(soonLabel)}</span>
           </div>
           <h3 class="work-title placeholder-title">${esc(emptyText)}</h3>
         </div>
@@ -871,6 +970,7 @@
   function renderHeroCardHtml() {
     const p = DATA.profile || {};
     const bannerSrc = p.banner || p.bannerImage;
+    const bannerCredit = loc(p, "bannerCredit", "");
     const bannerHtml = bannerSrc
       ? `<img src="${esc(bannerSrc)}" alt="Profile banner" data-fallback="true" data-kind="banner">`
       : getDefaultBannerSvg();
@@ -878,8 +978,8 @@
 
     const { main: nameMain, sub: nameSub } = splitDisplayName(p);
     const tagValue = p.tag || p.handle;
-    const descValue = p.description ?? p.bio ?? "";
-    const contactLabel = p.contactButtonLabel || p.primaryAction?.label || "contact";
+    const descValue = loc(p, "description", p.bio || "");
+    const contactLabel = loc(p, "contactButtonLabel", p.primaryAction?.label || "contact");
     const targetTab = normalizeTab(p.primaryAction?.targetTab || "contact") || "contact";
 
     const metaParts = [tagValue, p.location, p.pronouns, p.joined].filter(Boolean);
@@ -917,7 +1017,10 @@
         ${sakura ? getSakuraClusterSvg("sakura-deco-tl") : ""}
         ${sakura ? getSakuraClusterSvg("sakura-deco-br") : ""}
         <section class="hero-card" aria-labelledby="view-heading">
-          <div class="hero-banner">${bannerHtml}</div>
+          <div class="hero-banner">
+            ${bannerHtml}
+            ${bannerCredit ? `<span class="hero-banner-credit">${esc(bannerCredit)}</span>` : ""}
+          </div>
           <div class="hero-body">
             <div class="hero-top-row">
               <div class="hero-identity">
@@ -1042,13 +1145,13 @@
     const defaultVolRaw = raw.defaultVolume ?? 50;
     const defaultVolume = Math.max(0, Math.min(100, Number.isFinite(Number(defaultVolRaw)) ? Math.round(Number(defaultVolRaw)) : 50));
     return {
-      heading: raw.heading || "favourite song right now",
+      heading: loc(raw, "heading", "favourite song right now"),
       videoId,
       startAtSec,
       defaultVolume,
-      title: raw.title || "",
-      artist: raw.artist || "",
-      album: raw.album || "",
+      title: loc(raw, "title", ""),
+      artist: loc(raw, "artist", ""),
+      album: loc(raw, "album", ""),
       cover,
       openUrl,
     };
@@ -1099,7 +1202,7 @@
     const music = getMusicConfig();
     if (miniBtn) {
       miniBtn.innerHTML = ytCtrl.playing ? getSmallIconSvg("pause") : getSmallIconSvg("play");
-      miniBtn.setAttribute("aria-label", ytCtrl.playing ? "Pause song" : "Play song");
+      miniBtn.setAttribute("aria-label", ytCtrl.playing ? uiStr("pauseSong") : uiStr("playSong"));
     }
     if (eqBars) {
       eqBars.classList.toggle("is-active", ytCtrl.playing);
@@ -1120,7 +1223,7 @@
 
     if (btnPlay) {
       btnPlay.innerHTML = ytCtrl.playing ? getSmallIconSvg("pause") : getSmallIconSvg("play");
-      btnPlay.setAttribute("aria-label", ytCtrl.playing ? "Pause song" : "Play song");
+      btnPlay.setAttribute("aria-label", ytCtrl.playing ? uiStr("pauseSong") : uiStr("playSong"));
       btnPlay.classList.toggle("is-playing", ytCtrl.playing);
     }
     if (widgetEq) {
@@ -1141,7 +1244,7 @@
     if (btnMute) {
       const effectivelyMuted = ytCtrl.muted || ytCtrl.volume === 0;
       btnMute.innerHTML = effectivelyMuted ? getSmallIconSvg("volumeMuted") : getSmallIconSvg("volumeOn");
-      btnMute.setAttribute("aria-label", effectivelyMuted ? "Unmute" : "Mute");
+      btnMute.setAttribute("aria-label", effectivelyMuted ? uiStr("unmuteSong") : uiStr("muteSong"));
     }
     if (volEl) {
       const displayVol = ytCtrl.muted ? 0 : ytCtrl.volume;
@@ -1367,11 +1470,11 @@
       bpmEl.textContent = String(vitalsState.bpm);
       const beatSec = Math.max(0.38, Math.min(1.5, 60 / vitalsState.bpm)).toFixed(2);
       widgetEl.style.setProperty("--beat-dur", `${beatSec}s`);
-      subEl.textContent = "live";
+      subEl.textContent = loc(vitalsCfg, "liveLabel", "live");
     } else {
       bpmEl.textContent = "--";
       widgetEl.style.removeProperty("--beat-dur");
-      subEl.textContent = vitalsOfflineNote;
+      subEl.textContent = loc(vitalsCfg, "offlineNote", "monitor not on right now");
     }
   }
 
@@ -1551,7 +1654,7 @@
       typeof vitalsState.bpm === "number" &&
       vitalsState.bpm > 0;
     const bpmVal = isLive ? String(vitalsState.bpm) : "--";
-    const hrSub = isLive ? "live" : vitalsOfflineNote;
+    const hrSub = isLive ? loc(hr, "liveLabel", "live") : loc(hr, "offlineNote", "monitor not on right now");
     const beatStyle = isLive
       ? ` style="--beat-dur:${Math.max(0.38, Math.min(1.5, 60 / vitalsState.bpm)).toFixed(2)}s"`
       : "";
@@ -1565,7 +1668,7 @@
             ? `<div class="widget-card yt-music-widget">
                 <div class="widget-eyebrow-row">
                   <span class="widget-eyebrow-label">${getSmallIconSvg("ytMusic")}<span>${esc(song.heading)}</span><span id="yt-widget-eq" class="eq-bars${ytCtrl.playing ? " is-active" : ""}" aria-hidden="true"><i></i><i></i><i></i></span></span>
-                  <a class="widget-ext-link" href="${esc(songHref)}"${ext ? ' target="_blank" rel="noopener noreferrer"' : ""} aria-label="Open in YouTube Music">↗</a>
+                  <a class="widget-ext-link" href="${esc(songHref)}"${ext ? ' target="_blank" rel="noopener noreferrer"' : ""} aria-label="${esc(uiStr("openInYtMusic"))}">↗</a>
                 </div>
                 <div class="yt-music-row">
                   <a class="yt-thumb-wrap" href="${esc(songHref)}"${ext ? ' target="_blank" rel="noopener noreferrer"' : ""} tabindex="-1" aria-hidden="true">${thumbHtml}</a>
@@ -1575,7 +1678,7 @@
                   </div>
                   ${
                     song.videoId
-                      ? `<button id="btn-yt-play" class="yt-play-btn${ytCtrl.playing ? " is-playing" : ""}" type="button" aria-label="${ytCtrl.playing ? "Pause song" : "Play song"}">${ytCtrl.playing ? getSmallIconSvg("pause") : getSmallIconSvg("play")}</button>`
+                      ? `<button id="btn-yt-play" class="yt-play-btn${ytCtrl.playing ? " is-playing" : ""}" type="button" aria-label="${esc(ytCtrl.playing ? uiStr("pauseSong") : uiStr("playSong"))}">${ytCtrl.playing ? getSmallIconSvg("pause") : getSmallIconSvg("play")}</button>`
                       : ""
                   }
                 </div>
@@ -1583,11 +1686,11 @@
                   song.videoId
                     ? `<div class="yt-controls-bar">
                         <span id="yt-cur-time" class="yt-time">${esc(formatClockSec(ytCtrl.currentTime))}</span>
-                        <input id="yt-seek" class="yt-range yt-seek" type="range" min="0" max="1000" value="0" style="--pct:0%" aria-label="Seek track">
+                        <input id="yt-seek" class="yt-range yt-seek" type="range" min="0" max="1000" value="0" style="--pct:0%" aria-label="${esc(uiStr("seekTrack"))}">
                         <span id="yt-dur-time" class="yt-time">${esc(ytCtrl.duration > 0 ? formatClockSec(ytCtrl.duration) : "--:--")}</span>
                         <div class="yt-vol-wrap">
-                          <button id="btn-yt-mute" class="yt-mute-btn" type="button" aria-label="${volVal === 0 ? "Unmute" : "Mute"}">${volVal === 0 ? getSmallIconSvg("volumeMuted") : getSmallIconSvg("volumeOn")}</button>
-                          <input id="yt-volume" class="yt-range yt-volume" type="range" min="0" max="100" value="${volVal}" style="--pct:${volVal}%" aria-label="Volume">
+                          <button id="btn-yt-mute" class="yt-mute-btn" type="button" aria-label="${esc(volVal === 0 ? uiStr("unmuteSong") : uiStr("muteSong"))}">${volVal === 0 ? getSmallIconSvg("volumeMuted") : getSmallIconSvg("volumeOn")}</button>
+                          <input id="yt-volume" class="yt-range yt-volume" type="range" min="0" max="100" value="${volVal}" style="--pct:${volVal}%" aria-label="${esc(uiStr("volumeLabel"))}">
                         </div>
                       </div>`
                     : ""
@@ -1599,14 +1702,14 @@
           hr
             ? `<div id="vitals-widget" class="widget-card vitals-widget${isLive ? " is-live" : ""}"${beatStyle}>
                 <div class="widget-eyebrow-row">
-                  <span class="widget-eyebrow-label"><span class="vitals-dot" aria-hidden="true"></span><span>${esc(hr.heading || "live vitals")}</span></span>
+                  <span class="widget-eyebrow-label"><span class="vitals-dot" aria-hidden="true"></span><span>${esc(loc(hr, "heading", "live vitals"))}</span></span>
                   <span class="vitals-tz-pill">${esc(hr.timezoneLabel || "UTC+7")}</span>
                 </div>
                 <div class="vitals-metrics">
                   <div class="vitals-block">
                     <span class="vitals-heart-icon" aria-hidden="true">${getSmallIconSvg("heart")}</span>
                     <div class="vitals-text">
-                      <div class="vitals-num-line"><span id="vitals-bpm" class="vitals-val">${esc(bpmVal)}</span><span class="vitals-unit">bpm</span></div>
+                      <div class="vitals-num-line"><span id="vitals-bpm" class="vitals-val">${esc(bpmVal)}</span><span class="vitals-unit">${esc(uiStr("bpmUnit") || "bpm")}</span></div>
                       <div id="vitals-hr-sub" class="vitals-sub">${esc(hrSub)}</div>
                     </div>
                   </div>
@@ -1615,7 +1718,7 @@
                     <span class="vitals-clock-icon" aria-hidden="true">${getSmallIconSvg("clock")}</span>
                     <div class="vitals-text">
                       <div class="vitals-num-line"><span id="vitals-time" class="vitals-val">${esc(formatLocalTimeStr())}</span></div>
-                      <div class="vitals-sub">local time</div>
+                      <div class="vitals-sub">${esc(loc(hr, "localTimeLabel", "local time"))}</div>
                     </div>
                   </div>
                 </div>
@@ -1643,13 +1746,15 @@
   }
 
   function renderToolsView() {
+    const toolsCfg = DATA.tools || {};
     const groups = ["Software", "Peripherals"];
+    const groupLabels = (currentLang === "vi" && toolsCfg.vi?.groups) ? toolsCfg.vi.groups : {};
     const activeFilter = groups.includes(activeUseFilter) ? activeUseFilter : "Software";
+    const activeLabel = groupLabels[activeFilter] || activeFilter;
     const filtered = getToolsGroupItems(activeFilter);
-    const emptyText = DATA.tools?.emptyText || "to be updated";
-    const heading = DATA.tools?.heading || DATA.activeUsesSection?.heading || "Tools & Setup";
-    const subtitle =
-      DATA.tools?.subtitle || "Creative apps, coding tools, and setup essentials. Click any card for details.";
+    const emptyText = loc(toolsCfg, "emptyText", "to be updated");
+    const heading = loc(toolsCfg, "heading", DATA.activeUsesSection?.heading || "Tools & Setup");
+    const subtitle = loc(toolsCfg, "subtitle", "Creative apps, coding tools, and setup essentials. Click any card for details.");
 
     return `
       <div class="portfolio-view-inner">
@@ -1661,7 +1766,7 @@
         <div class="filter-pills" role="group" aria-label="Filter tools by category">
           ${groups
             .map(
-              (grp) => `<button class="filter-pill" type="button" data-use-filter="${esc(grp)}" aria-pressed="${grp === activeFilter ? "true" : "false"}">${esc(grp)}</button>`
+              (grp) => `<button class="filter-pill" type="button" data-use-filter="${esc(grp)}" aria-pressed="${grp === activeFilter ? "true" : "false"}">${esc(groupLabels[grp] || grp)}</button>`
             )
             .join("")}
         </div>
@@ -1670,7 +1775,7 @@
           ${
             filtered.length > 0
               ? filtered.map(renderUseCardHtml).join("")
-              : renderPlaceholderToolCardHtml(activeFilter, emptyText)
+              : renderPlaceholderToolCardHtml(activeLabel, emptyText)
           }
         </div>
       </div>
@@ -1685,9 +1790,12 @@
 
   function renderWorksView() {
     const worksCfg = Array.isArray(DATA.works) ? {} : (DATA.works || {});
-    const heading = worksCfg.heading || DATA.worksSection?.heading || "Works";
-    const subtitle = worksCfg.subtitle ?? DATA.worksSection?.subtitle ?? "";
-    const emptyText = worksCfg.emptyText || "to be updated";
+    const heading = loc(worksCfg, "heading", DATA.worksSection?.heading || "Works");
+    const subtitle = loc(worksCfg, "subtitle", DATA.worksSection?.subtitle ?? "");
+    const emptyText = loc(worksCfg, "emptyText", "to be updated");
+    const pillLabel = loc(worksCfg, "pillLabel", "works");
+    const soonLabel = loc(worksCfg, "soonLabel", "soon");
+    const allLabel = loc(worksCfg, "allFilter", "All");
     const works = getWorksList();
 
     if (works.length === 0) {
@@ -1698,13 +1806,14 @@
             ${subtitle ? `<p class="section-subtitle">${esc(subtitle)}</p>` : ""}
           </div>
           <div class="works-grid works-grid-empty">
-            ${renderPlaceholderWorkCardHtml(emptyText)}
+            ${renderPlaceholderWorkCardHtml(emptyText, pillLabel, soonLabel)}
           </div>
         </div>
       `;
     }
 
-    const cats = ["All", ...new Set(works.map((w) => w.category).filter(Boolean))];
+    const rawCats = [...new Set(works.map((w) => w.category).filter(Boolean))];
+    const cats = ["All", ...rawCats];
     const filtered = activeWorkFilter === "All" ? works : works.filter((w) => w.category === activeWorkFilter);
 
     return `
@@ -1717,7 +1826,7 @@
         <div class="filter-pills" role="group" aria-label="Filter works by discipline">
           ${cats
             .map(
-              (cat) => `<button class="filter-pill" type="button" data-work-filter="${esc(cat)}" aria-pressed="${cat === activeWorkFilter ? "true" : "false"}">${esc(cat)}</button>`
+              (cat) => `<button class="filter-pill" type="button" data-work-filter="${esc(cat)}" aria-pressed="${cat === activeWorkFilter ? "true" : "false"}">${esc(cat === "All" ? allLabel : cat)}</button>`
             )
             .join("")}
         </div>
@@ -1735,13 +1844,14 @@
     const avatarHtml = renderAvatarMarkup(p.name || "Avatar");
     const { main: nameMain, sub: nameSub } = splitDisplayName(p);
     const tagVal = p.tag || p.handle;
-    const descVal = lk.description || lk.cardBio || p.description || p.bio || "";
+    const contactDesc = loc(lk, "description", lk.cardBio || "");
+    const descVal = contactDesc || loc(p, "description", p.bio || "");
     const subParts = [tagVal, p.pronouns].filter(Boolean);
 
     return `
       <div class="portfolio-view-inner">
         <div class="section-head-centered">
-          <h1 id="view-heading" class="section-title" tabindex="-1">${esc(lk.heading || "Contact")}</h1>
+          <h1 id="view-heading" class="section-title" tabindex="-1">${esc(loc(lk, "heading", "Contact"))}</h1>
           <p class="section-subtitle">${esc(nameMain)}${nameSub ? ` ${esc(nameSub)}` : ""}${tagVal ? ` · ${esc(tagVal)}` : ""}</p>
         </div>
 
@@ -1772,8 +1882,8 @@
             }
 
             <div class="copy-actions">
-              <button class="action-chip-btn" type="button" id="btn-copy-handle">Copy handle</button>
-              <button class="action-chip-btn" type="button" id="btn-copy-url">Copy page link</button>
+              <button class="action-chip-btn" type="button" id="btn-copy-handle">${esc(uiStr("copyHandle"))}</button>
+              <button class="action-chip-btn" type="button" id="btn-copy-url">${esc(uiStr("copyLink"))}</button>
             </div>
             <p id="copy-feedback" class="copy-feedback" role="status"></p>
           </section>
@@ -1790,8 +1900,8 @@
                     <span class="link-row-left">
                       <span class="link-row-icon">${getSmallIconSvg(item.icon)}</span>
                       <span>
-                        <span class="link-row-title">${esc(item.label)}</span>
-                        <span class="link-row-sub">${esc(item.sublabel || "")}</span>
+                        <span class="link-row-title">${esc(loc(item, "label", ""))}</span>
+                        <span class="link-row-sub">${esc(loc(item, "sublabel", ""))}</span>
                       </span>
                     </span>
                     <span class="link-row-arrow" aria-hidden="true">↗</span>
@@ -1849,7 +1959,7 @@
       if (fb) fb.textContent = message;
       if (srLive) srLive.textContent = message;
     } catch {
-      if (fb) fb.textContent = `Copied value: ${text}`;
+      if (fb) fb.textContent = `${uiStr("copiedFallback") || "Copied value:"} ${text}`;
     }
   }
 
@@ -1900,6 +2010,12 @@
     const tabTarget = href.startsWith("#") ? normalizeTab(href.slice(1)) : null;
     const ext = isExternalUrl(href);
 
+    const tabLabelMap = {
+      home: uiStr("navHome"),
+      tools: uiStr("navTools"),
+      works: uiStr("navWorks"),
+      contact: uiStr("navContact"),
+    };
     dialogBody.innerHTML = `
       <div class="dialog-visual${mediaOpts.isVideo ? " dialog-visual-video" : ""}">${visualHtml}</div>
       ${mediaOpts.galleryHtml || ""}
@@ -1910,7 +2026,7 @@
         hasLink
           ? `<div class="dialog-actions">
               <a class="action-chip-btn" href="${esc(href)}"${tabTarget ? ` data-dialog-tab="${esc(tabTarget)}"` : ""}${ext ? ' target="_blank" rel="noopener noreferrer"' : ""}>
-                ${tabTarget ? `Go to ${esc(tabTarget)} →` : "Visit link ↗"}
+                ${tabTarget ? `${esc(uiStr("goToTab"))} ${esc(tabLabelMap[tabTarget] || tabTarget)} →` : esc(uiStr("visitLink"))}
               </a>
             </div>`
           : ""
@@ -1964,10 +2080,11 @@
         const allTools = [...getToolsGroupItems("Software"), ...getToolsGroupItems("Peripherals")];
         const item = allTools.find((u) => u.id === card.dataset.useId);
         if (!item) return;
-        const title = item.title || item.name || "";
-        const subtitle = item.subtitle || item.category || "";
-        const tag = item.tag || item.brand || "";
-        const desc = item.description || item.notes || "";
+        const title = loc(item, "title", item.name || "");
+        const subtitle = loc(item, "subtitle", item.category || "");
+        const tag = loc(item, "tag", item.brand || "");
+        const status = loc(item, "status", "in use");
+        const desc = loc(item, "description", item.notes || "");
         const visualHtml = item.image
           ? `<img src="${esc(item.image)}" alt="${esc(title)}" data-fallback="true" data-kind="gear" data-icon-type="${esc(item.iconType || "palette")}">`
           : item.badge
@@ -1975,7 +2092,7 @@
             : getGearIllustrationSvg(item.iconType);
         openItemDialog(
           card,
-          `${subtitle || "tool"}${item.status ? ` · ${item.status}` : ""}`,
+          `${subtitle || "tool"}${status ? ` · ${status}` : ""}`,
           visualHtml,
           title,
           tag,
@@ -1989,14 +2106,18 @@
       card.addEventListener("click", () => {
         const work = getWorksList().find((w) => w.id === card.dataset.workId);
         if (!work) return;
+        const title = loc(work, "title", "");
+        const category = loc(work, "category", "work");
+        const status = loc(work, "status", "");
+        const desc = loc(work, "description", work.summary || "");
         const media = renderWorkDialogMedia(work);
         openItemDialog(
           card,
-          `${work.category || "work"}${work.year ? ` · ${work.year}` : ""}`,
+          `${category}${work.year ? ` · ${work.year}` : ""}`,
           media.visualHtml,
-          work.title,
-          `${work.status || ""}${work.tags?.length ? ` · ${work.tags.join(" · ")}` : ""}`,
-          work.description || work.summary || "",
+          title,
+          `${status}${work.tags?.length ? ` · ${work.tags.join(" · ")}` : ""}`,
+          desc,
           work.url,
           media
         );
@@ -2005,11 +2126,11 @@
 
     document.getElementById("btn-copy-handle")?.addEventListener("click", () => {
       const tag = DATA.profile?.tag || DATA.profile?.handle || "@sachikofukuari";
-      copyText(tag, `Copied ${tag}`);
+      copyText(tag, `${uiStr("copiedPrefix")} ${tag}`);
     });
 
     document.getElementById("btn-copy-url")?.addEventListener("click", () => {
-      copyText(window.location.href, "Copied portfolio link");
+      copyText(window.location.href, uiStr("copiedLink"));
     });
 
     const btnPlay = document.getElementById("btn-yt-play");
@@ -2374,7 +2495,7 @@
   });
 
   // Initial sync
-  syncMotionUi();
+  applyLanguageUi(false);
   updateNavState();
   syncMiniPlayerDom();
 })();

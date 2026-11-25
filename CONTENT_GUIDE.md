@@ -12,7 +12,8 @@ All editable content lives in **[data.js](data.js)**. Images go in **[assets/ima
 | Tab title | `index.html` `<title>` | Currently `Sachiko Fukuari` with 🌸 favicon |
 | Intro greeting / cue | `intro.greeting`, `intro.cue` | Shown above the closed lotus |
 | Display name, subtitle, tag, bio | `profile.name`, `profile.subName`, `profile.tag`, `profile.description` | `subName` renders cleanly on its own line below `name` |
-| Banner image | `profile.banner` | Put image in `assets/images/` and point here (or bump `?v=7` after replacing `banner.jpg`) |
+| Banner image & art credit | `profile.banner`, `profile.bannerCredit` | Put image in `assets/images/` and set credit text cleanly |
+| Vietnamese translation | Any `vi: { ... }` block & `ui.vi` | Flag icon button at top-right toggles the entire page EN ↔ VI |
 | Profile picture | `profile.discordUserId` | Automatically syncs your live Discord avatar |
 | Favourite song widget | `music.youtubeUrl`, `startAt`, `defaultVolume`, `title`, `artist`, `album` | Paste any YouTube URL; `startAt` accepts `"3:00"` or seconds; `defaultVolume` is `0–100` |
 | Vitals offline message | `vitals.offlineNote` | Defaults to `"monitor not on right now"` |

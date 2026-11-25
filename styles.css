@@ -72,6 +72,16 @@
 *::before,
 *::after {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+button,
+a,
+input,
+[role="button"] {
+  -webkit-tap-highlight-color: transparent;
 }
 
 html,
@@ -117,6 +127,10 @@ button {
 
 a {
   text-decoration: none;
+}
+
+:is(button, a, input, [tabindex]):focus:not(:focus-visible) {
+  outline: none;
 }
 
 :is(button, a, [tabindex]):focus-visible {
@@ -323,9 +337,11 @@ body[data-stage="open"] .back-intro-btn {
   view-transition-name: none;
 }
 
-.util-pill {
+.util-pill,
+.util-icon-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 7px;
   min-height: 40px;
   padding: 8px 14px;
@@ -345,14 +361,30 @@ body[data-stage="open"] .back-intro-btn {
     transform 0.2s ease;
 }
 
-.util-pill[hidden] {
+.util-icon-btn {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+}
+
+.util-pill[hidden],
+.util-icon-btn[hidden] {
   display: none;
 }
 
-.util-pill:hover {
+.util-pill:hover,
+.util-icon-btn:hover {
   background: var(--surface-pill-active);
   border-color: var(--border-strong);
   transform: translateY(-1px);
+}
+
+.lang-flag-svg {
+  width: 20px;
+  height: 14px;
+  border-radius: 2.5px;
+  display: block;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22);
 }
 
 .util-icon {
@@ -654,6 +686,23 @@ body[data-transitioning="true"] .portfolio-shell {
   object-fit: cover;
   object-position: center 42%;
   display: block;
+}
+
+.hero-banner-credit {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  z-index: 3;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(18, 7, 13, 0.56);
+  border: 1px solid rgba(255, 214, 232, 0.20);
+  color: rgba(255, 242, 248, 0.90);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  pointer-events: none;
 }
 
 .hero-body {
@@ -2395,6 +2444,13 @@ body[data-stage="open"] .bottom-nav-btn[aria-current="page"] .nav-pill-bg {
   .util-pill {
     padding: 7px 11px;
     font-size: 12px;
+  }
+
+  .hero-banner-credit {
+    right: 8px;
+    bottom: 6px;
+    padding: 2px 7px;
+    font-size: 9.5px;
   }
 
   .sakura-deco-tl {
