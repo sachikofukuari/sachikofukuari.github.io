@@ -9,14 +9,17 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&display=swap">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=3">
 </head>
 <body data-stage="intro">
   <!-- Soft pink + drifting white mist fallback behind WebGL -->
   <div class="bg-fallback" aria-hidden="true"></div>
 
-  <!-- Full-viewport WebGL lotus blossom, bokeh meadow, and random white-pink sky -->
+  <!-- Full-viewport WebGL lotus blossom, bokeh meadow, and sky aurora -->
   <canvas id="lotus-canvas" class="lotus-canvas" aria-hidden="true"></canvas>
+
+  <!-- Constant-radius blur veil for open inner pages (avoids re-filtering 120Hz WebGL) -->
+  <div class="open-blur-veil" aria-hidden="true"></div>
 
   <!-- Graceful static/CSS fallback shown only if WebGL context cannot initialize -->
   <div id="lotus-svg-fallback" class="lotus-svg-fallback" hidden aria-hidden="true"></div>
@@ -118,9 +121,9 @@
   <!-- Global falling-petal cursor trail across intro + every view -->
   <canvas id="petal-cursor-canvas" class="petal-cursor-canvas" aria-hidden="true"></canvas>
 
-  <script defer src="data.js"></script>
-  <script defer src="js/lotus-scene.js"></script>
-  <script defer src="js/petal-cursor.js"></script>
-  <script defer src="js/app.js"></script>
+  <script defer src="data.js?v=3"></script>
+  <script defer src="js/lotus-scene.js?v=3"></script>
+  <script defer src="js/petal-cursor.js?v=3"></script>
+  <script defer src="js/app.js?v=3"></script>
 </body>
 </html>

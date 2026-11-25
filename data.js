@@ -31,10 +31,10 @@ window.PORTFOLIO_DATA = {
     pronouns: "",
     joined: "",
     bio: "be kind! 💖🌸 ",
-    bannerImage: "assets/images/banner.jpg",
+    bannerImage: "assets/images/banner.jpg?v=3",
     // Set your 17-19 digit Discord User ID here to auto-sync your live Discord profile picture
-    discordUserId: "",
-    avatarImage: null,
+    discordUserId: "732043268946133133",
+    avatarImage: "https://cdn.discordapp.com/avatars/732043268946133133/c232585fd1847e1c3666537a61429aa1.webp?size=256",
     primaryAction: {
       label: "contact",
       targetTab: "contact",

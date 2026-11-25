@@ -397,24 +397,24 @@
     lastAvatarFetchMs = now;
 
     try {
-      const res = await fetch(`https://api.lanyard.rest/v1/users/${rawId}`, { cache: "no-store" });
+      const res = await fetch(`https://japi.rest/discord/v1/user/${rawId}`, { cache: "no-store" });
       if (res.ok) {
         const json = await res.json();
-        const user = json?.data?.discord_user;
+        const user = json?.data;
         if (user) {
           applyLiveAvatarToDom(buildDiscordCdnUrl(rawId, user.avatar));
           return;
         }
       }
     } catch {
-      // Fall back to japi.rest below
+      // Fall back to Lanyard below
     }
 
     try {
-      const res = await fetch(`https://japi.rest/discord/v1/user/${rawId}`, { cache: "no-store" });
+      const res = await fetch(`https://api.lanyard.rest/v1/users/${rawId}`, { cache: "no-store" });
       if (res.ok) {
         const json = await res.json();
-        const user = json?.data;
+        const user = json?.data?.discord_user;
         if (user) {
           applyLiveAvatarToDom(buildDiscordCdnUrl(rawId, user.avatar));
         }
@@ -846,10 +846,10 @@
     const items = DATA.activeUses || [];
     const rawGroups = [...new Set(items.map((i) => i.filterGroup).filter(Boolean))];
     const groups = rawGroups.includes("Software")
-      ? ["Software", ...rawGroups.filter((g) => g !== "Software"), "All"]
-      : ["All", ...rawGroups];
+      ? ["Software", ...rawGroups.filter((g) => g !== "Software")]
+      : rawGroups;
     const activeFilter = groups.includes(activeUseFilter) ? activeUseFilter : groups[0];
-    const filtered = activeFilter === "All" ? items : items.filter((i) => i.filterGroup === activeFilter);
+    const filtered = activeFilter ? items.filter((i) => i.filterGroup === activeFilter) : items;
 
     return `
       <div class="portfolio-view-inner">
@@ -1076,7 +1076,7 @@
 
     portfolioMain.querySelectorAll("[data-use-filter]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        activeUseFilter = btn.dataset.useFilter || "All";
+        activeUseFilter = btn.dataset.useFilter || "Software";
         renderActiveView();
       });
     });

@@ -537,20 +537,25 @@
          vec3 sillCol = vec3(0.010, 0.012, 0.010);
          col = mix(col, sillCol, sillMask * 0.85);
 
-         // Faint drifting pinkish aurora + crisp 3-layer twinkling stars above V-valley skyline
+         // Vivid pastel pink + pastel blue aurora curtains & crisp 3-layer twinkling stars
          float skyMask = smoothstep(sillEdge - 0.01, sillEdge + 0.14, uv.y) * smoothstep(-0.08, 0.30, uv.y);
          if (skyMask > 0.004) {
-           float axA = uv.x * 1.45;
-           float wave1 = sin(axA * 2.1 + uTime * 0.14 + sin(axA * 1.3 - uTime * 0.09) * 1.1);
-           float wave2 = sin(axA * 3.4 - uTime * 0.11 + cos(axA * 1.9 + uTime * 0.07) * 0.85);
-           float curtainY = 0.56 + 0.16 * wave1 + 0.08 * wave2;
-           float band1 = exp(-pow((uv.y - curtainY) * 4.4, 2.0));
-           float band2 = exp(-pow((uv.y - (curtainY + 0.15)) * 5.2, 2.0)) * 0.55;
-           float rays = 0.72 + 0.28 * sin(uv.x * 16.0 + wave1 * 3.0 + uTime * 0.22);
-           float auroraEnv = smoothstep(0.18, 0.52, uv.y) * (1.0 - smoothstep(0.78, 1.06, uv.y));
-           float aurora = (band1 + band2) * rays * auroraEnv * skyMask;
-           vec3 auroraCol = mix(vec3(0.95, 0.34, 0.66), vec3(0.78, 0.42, 0.88), clamp(uv.y * 0.9 - 0.1, 0.0, 1.0));
-           col += auroraCol * aurora * 0.14;
+           float axA = uv.x * 1.38;
+           float waveP = sin(axA * 2.0 + uTime * 0.15 + sin(axA * 1.2 - uTime * 0.09) * 1.05);
+           float waveB = sin(axA * 2.4 - uTime * 0.13 + cos(axA * 1.5 + uTime * 0.08) * 1.00);
+           float curtainPinkY = 0.56 + 0.15 * waveP + 0.07 * cos(axA * 3.1 - uTime * 0.10);
+           float curtainBlueY = 0.63 + 0.16 * waveB + 0.06 * sin(axA * 3.5 + uTime * 0.11);
+
+           float pinkBand = exp(-pow((uv.y - curtainPinkY) * 4.2, 2.0)) + exp(-pow((uv.y - (curtainPinkY + 0.14)) * 5.0, 2.0)) * 0.48;
+           float blueBand = exp(-pow((uv.y - curtainBlueY) * 4.0, 2.0)) + exp(-pow((uv.y - (curtainBlueY - 0.13)) * 5.2, 2.0)) * 0.44;
+           float raysP = 0.70 + 0.30 * sin(uv.x * 14.0 + waveP * 2.8 + uTime * 0.24);
+           float raysB = 0.70 + 0.30 * sin(uv.x * 16.0 - waveB * 2.6 - uTime * 0.20);
+           float auroraEnv = smoothstep(0.14, 0.46, uv.y) * (1.0 - smoothstep(0.80, 1.06, uv.y));
+
+           vec3 pinkCol = mix(vec3(1.0, 0.44, 0.74), vec3(0.92, 0.58, 0.90), clamp(uv.y * 0.85, 0.0, 1.0));
+           vec3 blueCol = mix(vec3(0.46, 0.78, 1.0), vec3(0.66, 0.74, 1.0), clamp((uv.x * 0.5 + 0.5), 0.0, 1.0));
+           col += pinkCol * (pinkBand * raysP * auroraEnv * skyMask) * 0.28;
+           col += blueCol * (blueBand * raysB * auroraEnv * skyMask) * 0.25;
 
            vec2 starUv = vec2(uv.x * uAspect, uv.y);
            float s1 = starLayer(starUv, 26.0, 0.88, 165.0, 0.0, 0.0) * 0.56;
@@ -875,7 +880,7 @@
          if (isHeart < 0.5 && isAura < 0.5) {
            float nearBlur = (1.0 - smoothstep(1.0, 2.8, dep)) * 0.62;
            float farBlur = smoothstep(32.0, 62.0, dep) * 0.72;
-           defocus = max(max(nearBlur, farBlur), settle * (1.0 - blossom * 0.28) * 0.66);
+           defocus = max(max(nearBlur, farBlur), settle * (1.0 - blossom * 0.14) * 0.92);
             if (isPad < 0.5) {
               float nearAlpha = smoothstep(0.7, 1.85, dep);
               float farHorizon = 1.0 - smoothstep(54.0, 66.0, dep);
@@ -965,9 +970,9 @@
          vec2 loc = (vec2(mod(vBot.x, 8.0), floor(vBot.x / 8.0)) + uv) / 8.0;
 
          vec4 texel;
-         if (vBot.y < 0.04) {
+         if (vBot.y < 0.08) {
            texel = texture2D(uImage, loc);
-         } else if (vBot.y > 0.96) {
+         } else if (vBot.y > 0.92) {
            texel = texture2D(uImage, loc + vec2(0.0, 0.5));
          } else {
            texel = mix(texture2D(uImage, loc), texture2D(uImage, loc + vec2(0.0, 0.5)), vBot.y);
@@ -1156,9 +1161,9 @@
     let lastNow = 0;
     let widthPx = 0;
     let heightPx = 0;
-    let avgGap = 32;
+    let avgGap = 16;
     let budgetAt = 0;
-    let budget = lowEnd ? 1800000 : 6400000;
+    let budget = lowEnd ? 1400000 : 3400000;
 
     let tClock = 0;
     let mx = 0;
@@ -1200,7 +1205,7 @@
       sakuraMesh = buildSakuraMeshBuffer();
 
       // 1. Lush Dark-Green Siltora V-Valley Foliage Carpet + Foreground Mossy Mound
-      const foliageCount = lowEnd ? 16500 : 26000;
+      const foliageCount = lowEnd ? 12000 : 16500;
       for (let i = 0; i < foliageCount; i++) {
         if (!(i & 511)) await yieldSlice();
         const z = 1.1 + Math.pow(R(), 1.15) * 60.9;
@@ -1215,8 +1220,8 @@
         const patch = 0.5 + 0.5 * S(off * 1.18 + S(z * 0.28) * 1.8) * C(z * 0.34 + off * 0.38);
         const lit = 0.28 + 0.92 * Math.pow(patch, 1.65) + 0.22 * R();
         const depthMul = z < 2.4 ? 0.84 : z > 14 ? 1.0 + (z - 14) * 0.030 : 1.0;
-        const size = (0.48 + R() * 0.92) * depthMul;
-        const tile = R() < 0.54 ? 8 + Math.floor(R() * 4) : Math.floor(R() * 8);
+        const size = (0.54 + R() * 1.02) * depthMul;
+        const tile = R() < 0.58 ? 8 + Math.floor(R() * 4) : Math.floor(R() * 8);
         const ang = Math.atan2(z - SAKURA_Z, x - SAKURA_X);
         const r = Math.hypot(x - SAKURA_X, z - SAKURA_Z);
         const liftWeight = 0.52 + R() * 0.72;
@@ -1224,7 +1229,7 @@
       }
 
       // Dedicated lush foreground central mossy mound framing the lotus root
-      const moundCount = lowEnd ? 850 : 1300;
+      const moundCount = lowEnd ? 600 : 800;
       for (let i = 0; i < moundCount; i++) {
         if (!(i & 511)) await yieldSlice();
         const z = 2.6 + R() * 5.0;
@@ -1234,8 +1239,8 @@
         const y = meadowFloor(x, z) + 0.02 + R() * 0.18;
         const patch = 0.5 + 0.5 * S(off * 1.4) * C(z * 0.65);
         const lit = 0.32 + 0.85 * Math.pow(patch, 1.45) + 0.20 * R();
-        const size = 0.50 + R() * 0.78;
-        const tile = R() < 0.56 ? 8 + Math.floor(R() * 4) : Math.floor(R() * 8);
+        const size = 0.56 + R() * 0.84;
+        const tile = R() < 0.58 ? 8 + Math.floor(R() * 4) : Math.floor(R() * 8);
         const ang = Math.atan2(z - SAKURA_Z, x - SAKURA_X);
         const r = Math.hypot(x - SAKURA_X, z - SAKURA_Z);
         pushParticle(x, y, z, size, tile, R(), lit, 0.0, ang, r, 0.48 + R() * 0.55, 0.0);
@@ -1294,7 +1299,7 @@
       );
 
       // Midground valley pockets on slopes + sparse faint center canyon floor wisps
-      const pocketCount = lowEnd ? 105 : 175;
+      const pocketCount = lowEnd ? 75 : 115;
       for (let b = 0; b < pocketCount; b++) {
         const z = 4.4 + Math.pow(R(), 0.94) * 48.6;
         const side = R() < 0.5 ? -1 : 1;
@@ -1310,7 +1315,7 @@
       for (let b = 0; b < beds.length; b++) {
         await yieldSlice();
         const [bx, bz, k, w, d, litBoost] = beds[b];
-        const families = Math.min(38, Math.round(w * d * 7.5 + 6));
+        const families = Math.min(26, Math.round(w * d * 5.6 + 5));
         for (let f = 0; f < families; f++) {
           const a = R() * TAU;
           const rr = Math.sqrt(R());
@@ -1319,9 +1324,9 @@
           const fOff = fx - valleyCourse(fz);
           if (fz > 11.5 && Math.abs(fOff) < 1.25 && R() < 0.80) continue;
           if (!insideMeadowFrustum(fx, fz, false)) continue;
-          const baseFl = (0.24 + R() * 0.21) * (fz > 14 ? 1.0 + (fz - 14) * 0.044 : 1.0);
+          const baseFl = (0.26 + R() * 0.23) * (fz > 14 ? 1.0 + (fz - 14) * 0.044 : 1.0);
           const lf = (0.90 + R() * 0.12) * litBoost;
-          const clusterCount = 3 + Math.floor(R() * 5);
+          const clusterCount = 2 + Math.floor(R() * 3);
           const clusterSpread = 0.48 + (fz > 16 ? (fz - 16) * 0.022 : 0);
           for (let i = 0; i < clusterCount; i++) {
             const xx = fx + (R() - 0.5) * clusterSpread;
@@ -1504,11 +1509,11 @@
         Math.abs(settleTarget - settleMix) > 0.004;
 
       const pointerActive = now - lastPointerMoveMs < 550;
-      const settledOpen = !animating && settleMix > 0.985 && bloomTarget === 1;
-      const minGap = animating ? 0 : settledOpen ? 60 : pointerActive ? 14 : 33;
+      const settledOpen = !animating && settleMix > 0.992 && bloomTarget === 1;
+      const minGap = animating ? 0 : pointerActive ? 14 : 33;
 
       const gap = now - (lastNow || now - 16);
-      if (hasPaintedOnce && !paused && !isReduced && minGap > 0 && gap < minGap) {
+      if (hasPaintedOnce && !paused && !isReduced && !settledOpen && minGap > 0 && gap < minGap) {
         wake();
         return;
       }
@@ -1542,31 +1547,29 @@
         mouseSmooth += (mouseTarget - mouseSmooth) * fastEase;
       }
 
-      if (minGap <= 33) {
-        avgGap = avgGap * 0.9 + Math.min(200, Math.max(8, gap)) * 0.1;
+      if (minGap <= 16) {
+        avgGap = avgGap * 0.88 + Math.min(200, Math.max(4, gap)) * 0.12;
       }
 
       const cw = Math.max(1, canvas.clientWidth);
       const ch = Math.max(1, canvas.clientHeight);
-      const maxDpr = lowEnd ? 1.75 : 2.0;
+      const maxDpr = lowEnd ? 1.65 : 1.5;
       const targetDpr = Math.min(window.devicePixelRatio || 1, maxDpr);
       const nativePixels = Math.round(cw * ch * targetDpr * targetDpr);
-      const hi = Math.max(lowEnd ? 1800000 : 4800000, Math.min(nativePixels, lowEnd ? 2600000 : 7500000));
-      const minBudget = Math.max(cw * ch, lowEnd ? 500000 : 1600000);
+      const hi = Math.max(lowEnd ? 1400000 : 2800000, Math.min(nativePixels, lowEnd ? 1800000 : 3600000));
+      const minBudget = Math.max(cw * ch, lowEnd ? 500000 : 1200000);
 
       if (now - budgetAt > 1100) {
-        const downThreshold = Math.max(68, minGap + 36);
-        const upThreshold = Math.max(42, minGap + 12);
-        if (avgGap > downThreshold && budget > minBudget) {
+        if (avgGap > 36 && budget > minBudget) {
           budget = Math.max(minBudget, Math.round(budget * 0.82));
-        } else if (avgGap < upThreshold && budget < hi) {
-          budget = Math.min(hi, Math.round(budget * 1.15));
+        } else if (avgGap < 20 && budget < hi) {
+          budget = Math.min(hi, Math.round(budget * 1.12));
         }
         budgetAt = now;
       }
 
       const dpr = Math.min(targetDpr, Math.sqrt(budget / (cw * ch)));
-      const maxPointSize = Math.min(hwMaxPointSize, Math.round((lowEnd ? 105 : 138) * dpr));
+      const maxPointSize = Math.min(hwMaxPointSize, Math.round((lowEnd ? 96 : 112) * dpr));
       const W = Math.max(2, Math.round(cw * dpr));
       const H = Math.max(2, Math.round(ch * dpr));
 
@@ -1678,7 +1681,7 @@
         Math.abs(flyTarget - flyMix) > 0.002 ||
         Math.abs(settleTarget - settleMix) > 0.002;
 
-      if (!paused && !isBackgrounded() && (!isReduced || settling)) {
+      if (!paused && !isBackgrounded() && !settledOpen && (!isReduced || settling)) {
         wake();
       }
     }
