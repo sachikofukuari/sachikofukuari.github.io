@@ -194,6 +194,11 @@
       crosshair: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="m5 6 7 9 7-9"/><path d="M5 16h14"/></svg>',
       triangle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 4 19h16L12 4Z"/><path d="M12 10 8.5 17h7L12 10Z"/></svg>',
       music: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
+      ytMusic: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="5.5" stroke="currentColor" stroke-width="1.2" opacity="0.65"/><polygon points="10.4,9.2 15.6,12 10.4,14.8" fill="currentColor"/></svg>',
+      heart: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 20.6s-7.4-4.7-9.6-9.1C.8 8.3 2.4 4.6 5.9 3.9c2.1-.4 4.1.5 5.3 2.1.3.4.9.4 1.2 0 1.2-1.6 3.2-2.5 5.3-2.1 3.5.7 5.1 4.4 3.5 7.6-2.2 4.4-9.2 9.1-9.2 9.1Z"/></svg>',
+      clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.2 14"/></svg>',
+      play: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8.5 6.3v11.4l9.6-5.7-9.6-5.7Z"/></svg>',
+      close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>',
     };
     return icons[name] || icons.sparkle;
   }
@@ -328,6 +333,7 @@
         if (kind === "avatar") wrap.innerHTML = getDefaultAvatarSvg();
         else if (kind === "banner") wrap.innerHTML = getDefaultBannerSvg();
         else if (kind === "work") wrap.innerHTML = getWorkCoverSvg(Number(img.dataset.seed) || 1);
+        else if (kind === "music") wrap.innerHTML = getSmallIconSvg("ytMusic");
         else wrap.innerHTML = getGearIllustrationSvg(type);
       }, { once: true });
     });
@@ -650,9 +656,11 @@
     if (inactive) {
       bodyEl.dataset.pageInactive = "true";
       resetGreetingCharsImmediate();
+      destroyYtEmbed();
     } else if (!document.hidden) {
       delete bodyEl.dataset.pageInactive;
     }
+    syncVitalsLifecycle();
   }
 
   document.addEventListener("visibilitychange", () => {
@@ -724,7 +732,6 @@
       <button class="use-card" type="button" data-use-id="${esc(item.id)}">
         <div class="use-card-top">
           <span>${esc(item.status || "in use")}</span>
-          <span class="use-card-rating"><span class="star" aria-hidden="true">★</span> ${esc(item.rating || "5.0")}</span>
         </div>
         <div class="use-card-visual">${visualHtml}</div>
         <div class="use-card-meta">
@@ -834,22 +841,364 @@
     `;
   }
 
+  // --------------------------------------------------------------------------
+  // Home Side-by-Side Widgets (YouTube Music + Live Pulsoid HR & Local Time)
+  // --------------------------------------------------------------------------
+
+  const vitalsCfg = DATA.homeWidgets?.heartRate || {};
+  const vitalsTz = vitalsCfg.timezone || "Asia/Ho_Chi_Minh";
+  const vitalsOfflineMs = Number(vitalsCfg.offlineTimeoutMs) || 15000;
+  let timeFormatter = null;
+  try {
+    timeFormatter = new Intl.DateTimeFormat("en-GB", {
+      timeZone: vitalsTz,
+      hour12: false,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  } catch {
+    timeFormatter = new Intl.DateTimeFormat("en-GB", {
+      hour12: false,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  }
+
+  function formatLocalTimeStr() {
+    try {
+      return timeFormatter.format(new Date());
+    } catch {
+      const d = new Date();
+      return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
+    }
+  }
+
+  const vitalsState = {
+    ws: null,
+    tickTimer: 0,
+    reconnectTimer: 0,
+    connectTimeoutTimer: 0,
+    isConnecting: false,
+    bpm: null,
+    lastHeartbeatMs: 0,
+    lastSessionDataMs: 0,
+    statusText: "connecting",
+  };
+
+  function isVitalsNeeded() {
+    return (
+      stage === "open" &&
+      activeTab === "home" &&
+      !document.hidden &&
+      bodyEl.dataset.pageInactive !== "true"
+    );
+  }
+
+  function updateVitalsDom() {
+    const widgetEl = document.getElementById("vitals-widget");
+    const bpmEl = document.getElementById("vitals-bpm");
+    const subEl = document.getElementById("vitals-hr-sub");
+    const timeEl = document.getElementById("vitals-time");
+    if (timeEl) {
+      timeEl.textContent = formatLocalTimeStr();
+    }
+    if (!widgetEl || !bpmEl || !subEl) return;
+
+    const now = Date.now();
+    const isStale = vitalsState.lastHeartbeatMs === 0 || now - vitalsState.lastHeartbeatMs > vitalsOfflineMs;
+    const isLive = !isStale && typeof vitalsState.bpm === "number" && vitalsState.bpm > 0;
+
+    widgetEl.classList.toggle("is-live", isLive);
+    if (isLive) {
+      bpmEl.textContent = String(vitalsState.bpm);
+      const beatSec = Math.max(0.38, Math.min(1.5, 60 / vitalsState.bpm)).toFixed(2);
+      widgetEl.style.setProperty("--beat-dur", `${beatSec}s`);
+      subEl.textContent = "live";
+    } else {
+      bpmEl.textContent = "--";
+      widgetEl.style.removeProperty("--beat-dur");
+      subEl.textContent = vitalsState.statusText;
+    }
+  }
+
+  function closePulsoidSocket() {
+    clearTimeout(vitalsState.reconnectTimer);
+    vitalsState.reconnectTimer = 0;
+    clearTimeout(vitalsState.connectTimeoutTimer);
+    vitalsState.connectTimeoutTimer = 0;
+    vitalsState.isConnecting = false;
+    if (vitalsState.ws) {
+      const sock = vitalsState.ws;
+      vitalsState.ws = null;
+      sock.onopen = null;
+      sock.onmessage = null;
+      sock.onclose = null;
+      sock.onerror = null;
+      try {
+        sock.close();
+      } catch {
+        // Ignore close errors
+      }
+    }
+  }
+
+  function schedulePulsoidReconnect(delayMs = 4000) {
+    if (vitalsState.reconnectTimer || !isVitalsNeeded()) return;
+    vitalsState.reconnectTimer = setTimeout(() => {
+      vitalsState.reconnectTimer = 0;
+      connectPulsoidSocket();
+    }, delayMs);
+  }
+
+  function connectPulsoidSocket() {
+    const wsUrl = vitalsCfg.pulsoidWsUrl;
+    if (!wsUrl || !isVitalsNeeded() || vitalsState.isConnecting) return;
+    if (vitalsState.ws && (vitalsState.ws.readyState === WebSocket.OPEN || vitalsState.ws.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
+    closePulsoidSocket();
+    vitalsState.isConnecting = true;
+    vitalsState.lastSessionDataMs = Date.now();
+    if (vitalsState.bpm == null) {
+      vitalsState.statusText = "connecting";
+      updateVitalsDom();
+    }
+
+    let ws;
+    try {
+      ws = new WebSocket(wsUrl);
+      vitalsState.ws = ws;
+    } catch {
+      vitalsState.isConnecting = false;
+      vitalsState.statusText = "offline";
+      updateVitalsDom();
+      schedulePulsoidReconnect(4500);
+      return;
+    }
+
+    vitalsState.connectTimeoutTimer = setTimeout(() => {
+      if (vitalsState.ws === ws && ws.readyState !== WebSocket.OPEN) {
+        closePulsoidSocket();
+        vitalsState.statusText = "offline";
+        updateVitalsDom();
+        schedulePulsoidReconnect(3500);
+      }
+    }, 10000);
+
+    ws.onopen = () => {
+      if (vitalsState.ws !== ws) return;
+      clearTimeout(vitalsState.connectTimeoutTimer);
+      vitalsState.connectTimeoutTimer = 0;
+      vitalsState.isConnecting = false;
+      vitalsState.lastSessionDataMs = Date.now();
+      if (vitalsState.lastHeartbeatMs === 0) {
+        vitalsState.statusText = "waiting";
+        updateVitalsDom();
+      }
+    };
+
+    ws.onmessage = (event) => {
+      if (vitalsState.ws !== ws) return;
+      try {
+        const parsed = JSON.parse(String(event.data || ""));
+        const rawHr =
+          parsed?.data?.heartRate ??
+          parsed?.data?.heart_rate ??
+          parsed?.heartRate ??
+          parsed?.heart_rate ??
+          parsed?.bpm;
+        if (rawHr !== undefined) {
+          const bpm = parseInt(rawHr, 10);
+          const now = Date.now();
+          vitalsState.lastSessionDataMs = now;
+          if (!Number.isNaN(bpm) && bpm > 0) {
+            vitalsState.bpm = bpm;
+            vitalsState.lastHeartbeatMs = now;
+            vitalsState.statusText = "live";
+          } else if (bpm === 0) {
+            vitalsState.bpm = null;
+            vitalsState.lastHeartbeatMs = 0;
+            vitalsState.statusText = "offline";
+          }
+          updateVitalsDom();
+        }
+      } catch {
+        // Ignore malformed WebSocket payloads
+      }
+    };
+
+    ws.onclose = () => {
+      if (vitalsState.ws !== ws) return;
+      vitalsState.ws = null;
+      vitalsState.isConnecting = false;
+      clearTimeout(vitalsState.connectTimeoutTimer);
+      vitalsState.connectTimeoutTimer = 0;
+      if (vitalsState.lastHeartbeatMs === 0 || Date.now() - vitalsState.lastHeartbeatMs > vitalsOfflineMs) {
+        vitalsState.statusText = "offline";
+        updateVitalsDom();
+      }
+      schedulePulsoidReconnect(4000);
+    };
+
+    ws.onerror = () => {
+      if (vitalsState.ws !== ws) return;
+      try {
+        ws.close();
+      } catch {
+        // Ignore
+      }
+    };
+  }
+
+  function syncVitalsLifecycle() {
+    if (!isVitalsNeeded()) {
+      clearInterval(vitalsState.tickTimer);
+      vitalsState.tickTimer = 0;
+      closePulsoidSocket();
+      return;
+    }
+
+    updateVitalsDom();
+    if (!vitalsState.tickTimer) {
+      vitalsState.tickTimer = setInterval(() => {
+        if (!isVitalsNeeded()) {
+          syncVitalsLifecycle();
+          return;
+        }
+        const now = Date.now();
+        if (vitalsState.lastHeartbeatMs > 0 && now - vitalsState.lastHeartbeatMs > vitalsOfflineMs) {
+          vitalsState.bpm = null;
+          vitalsState.statusText = "offline";
+        }
+        if (
+          vitalsState.ws &&
+          vitalsState.ws.readyState === WebSocket.OPEN &&
+          !vitalsState.isConnecting &&
+          !vitalsState.reconnectTimer &&
+          now - vitalsState.lastSessionDataMs > 30000
+        ) {
+          vitalsState.lastSessionDataMs = now;
+          connectPulsoidSocket();
+        }
+        updateVitalsDom();
+      }, 1000);
+    }
+    connectPulsoidSocket();
+  }
+
+  function destroyYtEmbed() {
+    const slot = document.getElementById("yt-embed-slot");
+    const btn = document.getElementById("btn-yt-toggle");
+    if (slot) {
+      slot.innerHTML = "";
+      slot.hidden = true;
+    }
+    if (btn) {
+      btn.setAttribute("aria-expanded", "false");
+      btn.classList.remove("is-playing");
+      btn.innerHTML = getSmallIconSvg("play");
+    }
+  }
+
+  function renderHomeWidgetsHtml() {
+    const song = DATA.homeWidgets?.favoriteSong;
+    const hr = DATA.homeWidgets?.heartRate;
+    if (!song && !hr) return "";
+
+    const songHref = safeUrl(song?.musicUrl || song?.url || "#");
+    const ext = isExternalUrl(songHref);
+    const thumbHtml = song?.thumbnail
+      ? `<img src="${esc(song.thumbnail)}" alt="${esc(song.title || "Favourite song")}" data-fallback="true" data-kind="music">`
+      : getSmallIconSvg("ytMusic");
+
+    const now = Date.now();
+    const isLive =
+      vitalsState.lastHeartbeatMs > 0 &&
+      now - vitalsState.lastHeartbeatMs <= vitalsOfflineMs &&
+      typeof vitalsState.bpm === "number" &&
+      vitalsState.bpm > 0;
+    const bpmVal = isLive ? String(vitalsState.bpm) : "--";
+    const hrSub = isLive ? "live" : vitalsState.statusText;
+    const beatStyle = isLive
+      ? ` style="--beat-dur:${Math.max(0.38, Math.min(1.5, 60 / vitalsState.bpm)).toFixed(2)}s"`
+      : "";
+
+    return `
+      <section class="home-widgets-row" aria-label="Status widgets">
+        ${
+          song
+            ? `<div class="widget-card yt-music-widget">
+                <div class="widget-eyebrow-row">
+                  <span class="widget-eyebrow-label">${getSmallIconSvg("ytMusic")}<span>${esc(song.heading || "favourite song right now")}</span></span>
+                  <a class="widget-ext-link" href="${esc(songHref)}"${ext ? ' target="_blank" rel="noopener noreferrer"' : ""} aria-label="Open in YouTube Music">↗</a>
+                </div>
+                <div class="yt-music-row">
+                  <a class="yt-thumb-wrap" href="${esc(songHref)}"${ext ? ' target="_blank" rel="noopener noreferrer"' : ""} tabindex="-1" aria-hidden="true">${thumbHtml}</a>
+                  <div class="yt-meta">
+                    <a class="yt-title" href="${esc(songHref)}"${ext ? ' target="_blank" rel="noopener noreferrer"' : ""} title="${esc(song.title || "")}">${esc(song.title || "")}</a>
+                    <span class="yt-artist">${esc(song.artist || "")}${song.album ? ` · ${esc(song.album)}` : ""}</span>
+                  </div>
+                  ${
+                    song.videoId
+                      ? `<button id="btn-yt-toggle" class="yt-play-btn" type="button" aria-expanded="false" aria-label="Play favourite song preview" data-yt-id="${esc(song.videoId)}">${getSmallIconSvg("play")}</button>`
+                      : ""
+                  }
+                </div>
+                <div id="yt-embed-slot" class="yt-embed-slot" hidden></div>
+              </div>`
+            : ""
+        }
+        ${
+          hr
+            ? `<div id="vitals-widget" class="widget-card vitals-widget${isLive ? " is-live" : ""}"${beatStyle}>
+                <div class="widget-eyebrow-row">
+                  <span class="widget-eyebrow-label"><span class="vitals-dot" aria-hidden="true"></span><span>${esc(hr.heading || "live vitals")}</span></span>
+                  <span class="vitals-tz-pill">${esc(hr.timezoneLabel || "UTC+7")}</span>
+                </div>
+                <div class="vitals-metrics">
+                  <div class="vitals-block">
+                    <span class="vitals-heart-icon" aria-hidden="true">${getSmallIconSvg("heart")}</span>
+                    <div class="vitals-text">
+                      <div class="vitals-num-line"><span id="vitals-bpm" class="vitals-val">${esc(bpmVal)}</span><span class="vitals-unit">bpm</span></div>
+                      <div id="vitals-hr-sub" class="vitals-sub">${esc(hrSub)}</div>
+                    </div>
+                  </div>
+                  <div class="vitals-divider" aria-hidden="true"></div>
+                  <div class="vitals-block">
+                    <span class="vitals-clock-icon" aria-hidden="true">${getSmallIconSvg("clock")}</span>
+                    <div class="vitals-text">
+                      <div class="vitals-num-line"><span id="vitals-time" class="vitals-val">${esc(formatLocalTimeStr())}</span></div>
+                      <div class="vitals-sub">local time</div>
+                    </div>
+                  </div>
+                </div>
+              </div>`
+            : ""
+        }
+      </section>
+    `;
+  }
+
   function renderHomeView() {
     return `
       <div class="portfolio-view-inner portfolio-view-home">
         ${renderHeroCardHtml()}
+        ${renderHomeWidgetsHtml()}
       </div>
     `;
   }
 
   function renderToolsView() {
-    const items = DATA.activeUses || [];
-    const rawGroups = [...new Set(items.map((i) => i.filterGroup).filter(Boolean))];
-    const groups = rawGroups.includes("Software")
-      ? ["Software", ...rawGroups.filter((g) => g !== "Software")]
-      : rawGroups;
-    const activeFilter = groups.includes(activeUseFilter) ? activeUseFilter : groups[0];
-    const filtered = activeFilter ? items.filter((i) => i.filterGroup === activeFilter) : items;
+    const items = (DATA.activeUses || []).filter(
+      (i) => i.filterGroup === "Software" || i.filterGroup === "Peripherals"
+    );
+    const allowedGroups = ["Software", "Peripherals"];
+    const groups = allowedGroups.filter((g) => items.some((i) => i.filterGroup === g));
+    const activeFilter = groups.includes(activeUseFilter) ? activeUseFilter : (groups[0] || "Software");
+    const filtered = items.filter((i) => i.filterGroup === activeFilter);
 
     return `
       <div class="portfolio-view-inner">
@@ -994,6 +1343,7 @@
     portfolioMain.innerHTML = html;
     attachImageFallbacks(portfolioMain);
     wireRenderedViewInteractions();
+    syncVitalsLifecycle();
   }
 
   function updateNavState() {
@@ -1100,7 +1450,7 @@
           `${item.category} · ${item.status || "in use"}`,
           visualHtml,
           item.name,
-          `${item.brand} · ★ ${item.rating || "5.0"}`,
+          `${item.brand || ""}`,
           item.notes || "",
           item.url
         );
@@ -1133,6 +1483,23 @@
     document.getElementById("btn-copy-url")?.addEventListener("click", () => {
       copyText(window.location.href, "Copied portfolio link");
     });
+
+    const btnYtToggle = document.getElementById("btn-yt-toggle");
+    btnYtToggle?.addEventListener("click", () => {
+      const slot = document.getElementById("yt-embed-slot");
+      const videoId = btnYtToggle.dataset.ytId;
+      if (!slot || !videoId) return;
+      const opening = slot.hidden;
+      if (opening) {
+        slot.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?autoplay=1&rel=0" title="Favourite song preview" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe>`;
+        slot.hidden = false;
+        btnYtToggle.setAttribute("aria-expanded", "true");
+        btnYtToggle.classList.add("is-playing");
+        btnYtToggle.innerHTML = getSmallIconSvg("close");
+      } else {
+        destroyYtEmbed();
+      }
+    });
   }
 
   // --------------------------------------------------------------------------
@@ -1164,6 +1531,12 @@
     if (!targetTab) return;
     if (targetTab === activeTab && portfolioMain.innerHTML.trim() !== "") return;
 
+    if (targetTab === "tools" && activeTab !== "tools") {
+      activeUseFilter = "Software";
+    }
+    if (activeTab === "home" && targetTab !== "home") {
+      destroyYtEmbed();
+    }
     activeTab = targetTab;
     if (updateHash && window.location.hash !== `#${targetTab}`) {
       history.pushState(null, "", `#${targetTab}`);
@@ -1277,8 +1650,10 @@
   function closeToIntro() {
     if (stage === "intro" || transitionLocked) return;
     if (itemDialog?.open) itemDialog.close();
+    destroyYtEmbed();
     lockTransition(2300);
     stage = "intro";
+    syncVitalsLifecycle();
     bodyEl.dataset.stage = "intro";
     portfolioShell.inert = true;
     portfolioShell.setAttribute("aria-hidden", "true");

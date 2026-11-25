@@ -80,7 +80,7 @@
     const gl = canvas.getContext("webgl", {
       alpha: false,
       depth: true,
-      antialias: true,
+      antialias: false,
       preserveDrawingBuffer: false,
     });
 
@@ -88,6 +88,8 @@
       triggerFallback();
       return createNoopApi();
     }
+
+    const hasDerivatives = Boolean(gl.getExtension("OES_standard_derivatives"));
 
     function triggerFallback() {
       document.body.classList.add("webgl-fallback");
@@ -504,6 +506,20 @@
          return fract(p.x * p.y);
        }
 
+       float hash11(float p) {
+         p = fract(p * 0.1031);
+         p *= p + 33.33;
+         p *= p + p;
+         return fract(p);
+       }
+
+       float vnoise1(float x) {
+         float i = floor(x);
+         float f = fract(x);
+         float u = f * f * (3.0 - 2.0 * f);
+         return mix(hash11(i), hash11(i + 1.0), u);
+       }
+
        float starLayer(vec2 suv, float scale, float threshold, float coreK, float sparkleWeight, float phaseShift) {
          vec2 gv = fract(suv * scale) - 0.5;
          vec2 id = floor(suv * scale);
@@ -537,25 +553,43 @@
          vec3 sillCol = vec3(0.010, 0.012, 0.010);
          col = mix(col, sillCol, sillMask * 0.85);
 
-         // Vivid pastel pink + pastel blue aurora curtains & crisp 3-layer twinkling stars
-         float skyMask = smoothstep(sillEdge - 0.01, sillEdge + 0.14, uv.y) * smoothstep(-0.08, 0.30, uv.y);
+         // Realistic sweeping curved IRL pastel pink + pastel blue aurora curtains & crisp twinkling stars
+         float skyMask = smoothstep(sillEdge - 0.04, sillEdge + 0.16, uv.y) * smoothstep(-0.22, 0.08, uv.y);
          if (skyMask > 0.004) {
-           float axA = uv.x * 1.38;
-           float waveP = sin(axA * 2.0 + uTime * 0.15 + sin(axA * 1.2 - uTime * 0.09) * 1.05);
-           float waveB = sin(axA * 2.4 - uTime * 0.13 + cos(axA * 1.5 + uTime * 0.08) * 1.00);
-           float curtainPinkY = 0.56 + 0.15 * waveP + 0.07 * cos(axA * 3.1 - uTime * 0.10);
-           float curtainBlueY = 0.63 + 0.16 * waveB + 0.06 * sin(axA * 3.5 + uTime * 0.11);
+           float px = uv.x * 1.15;
+           float foldP = 0.08 * sin(px * 2.1 + uTime * 0.11)
+             + 0.045 * sin(px * 4.3 - uTime * 0.08 + 1.4)
+             + 0.025 * (vnoise1(px * 3.0 + uTime * 0.06) - 0.5);
+           float curveP = 0.44 + 0.14 * px - 0.08 * px * px + foldP;
+           float dyP = uv.y - curveP;
 
-           float pinkBand = exp(-pow((uv.y - curtainPinkY) * 4.2, 2.0)) + exp(-pow((uv.y - (curtainPinkY + 0.14)) * 5.0, 2.0)) * 0.48;
-           float blueBand = exp(-pow((uv.y - curtainBlueY) * 4.0, 2.0)) + exp(-pow((uv.y - (curtainBlueY - 0.13)) * 5.2, 2.0)) * 0.44;
-           float raysP = 0.70 + 0.30 * sin(uv.x * 14.0 + waveP * 2.8 + uTime * 0.24);
-           float raysB = 0.70 + 0.30 * sin(uv.x * 16.0 - waveB * 2.6 - uTime * 0.20);
-           float auroraEnv = smoothstep(0.14, 0.46, uv.y) * (1.0 - smoothstep(0.80, 1.06, uv.y));
+           float foldB = 0.085 * cos(px * 1.9 - uTime * 0.10 + 0.7)
+             + 0.04 * sin(px * 3.9 + uTime * 0.07)
+             + 0.025 * (vnoise1(px * 2.8 - uTime * 0.05 + 7.1) - 0.5);
+           float curveB = 0.52 - 0.10 * px - 0.07 * px * px + foldB;
+           float dyB = uv.y - curveB;
 
-           vec3 pinkCol = mix(vec3(1.0, 0.44, 0.74), vec3(0.92, 0.58, 0.90), clamp(uv.y * 0.85, 0.0, 1.0));
-           vec3 blueCol = mix(vec3(0.46, 0.78, 1.0), vec3(0.66, 0.74, 1.0), clamp((uv.x * 0.5 + 0.5), 0.0, 1.0));
-           col += pinkCol * (pinkBand * raysP * auroraEnv * skyMask) * 0.28;
-           col += blueCol * (blueBand * raysB * auroraEnv * skyMask) * 0.25;
+           float curtainP = dyP >= 0.0 ? exp(-dyP * 4.6) : exp(dyP * 11.5);
+           if (dyP > -0.02) {
+             curtainP += exp(-max(0.0, dyP - 0.06) * 2.6) * 0.25 * smoothstep(-0.02, 0.05, dyP);
+           }
+           float curtainB = dyB >= 0.0 ? exp(-dyB * 4.2) : exp(dyB * 10.5);
+           if (dyB > -0.02) {
+             curtainB += exp(-max(0.0, dyB - 0.06) * 2.5) * 0.24 * smoothstep(-0.02, 0.05, dyB);
+           }
+
+           float rayCoordP = px * 4.6 - dyP * 1.8 + sin(px * 2.2 + uTime * 0.09) * 0.85;
+           float shimmerP = 0.68 + 0.32 * (0.6 * vnoise1(rayCoordP + uTime * 0.08) + 0.4 * vnoise1(rayCoordP * 2.1 - uTime * 0.06));
+           float rayCoordB = px * 4.4 + dyB * 1.6 + cos(px * 2.0 - uTime * 0.08) * 0.80;
+           float shimmerB = 0.66 + 0.34 * (0.6 * vnoise1(rayCoordB - uTime * 0.07 + 11.3) + 0.4 * vnoise1(rayCoordB * 2.0 + uTime * 0.05 + 5.7));
+
+           float latFade = smoothstep(1.38, 0.22, abs(uv.x));
+           float topFade = 1.0 - smoothstep(0.92, 1.12, uv.y);
+
+           vec3 pinkCol = mix(vec3(1.0, 0.48, 0.76), vec3(0.88, 0.58, 0.92), clamp(dyP * 2.4 + 0.25, 0.0, 1.0));
+           vec3 blueCol = mix(vec3(0.46, 0.80, 1.0), vec3(0.68, 0.72, 1.0), clamp(dyB * 2.2 + 0.25, 0.0, 1.0));
+           col += pinkCol * (curtainP * shimmerP * latFade * topFade * skyMask) * 0.165;
+           col += blueCol * (curtainB * shimmerB * latFade * topFade * skyMask) * 0.145;
 
            vec2 starUv = vec2(uv.x * uAspect, uv.y);
            float s1 = starLayer(starUv, 26.0, 0.88, 165.0, 0.0, 0.0) * 0.56;
@@ -694,8 +728,9 @@
          vNormal = nrm;
          vWorldPos = wPos;
        }`,
-      `precision highp float;
+      `${hasDerivatives ? "#extension GL_OES_standard_derivatives : enable\n#define HAS_DERIV 1\n" : "#define HAS_DERIV 0\n"}precision highp float;
        uniform float uSettle;
+       uniform float uAaPass;
        uniform vec4 uCamera;
 
        varying vec2 vUv;
@@ -764,7 +799,33 @@
          float edgeFeather = smoothstep(1.0, 0.16, abs(v)) * smoothstep(1.0, 0.22, u) * smoothstep(0.0, 0.16, u);
          float softMask = mix(1.0, edgeFeather, uSettle);
          float alpha = mix(1.0, 0.36, uSettle) * softMask;
-         gl_FragColor = vec4(col, alpha);
+
+         float av = abs(v);
+         float ndv = abs(dot(n, viewDir));
+         #if HAS_DERIV
+           float fwV = clamp(fwidth(av), 0.0025, 0.20);
+           float fwU = clamp(fwidth(u), 0.0025, 0.15);
+           float fwN = clamp(fwidth(ndv), 0.004, 0.18);
+         #else
+           float fwV = 0.014;
+           float fwU = 0.014;
+           float fwN = 0.024;
+         #endif
+         float aaV = 1.0 - smoothstep(1.0 - fwV * 1.45, 1.0, av);
+         float aaTip = 1.0 - smoothstep(1.0 - fwU * 1.45, 1.0, u);
+         float aaBase = smoothstep(0.0, fwU * 1.0, u);
+         float aaGrazing = smoothstep(0.0, fwN * 1.35, ndv);
+         float aaCov = min(aaV * aaTip * aaBase, aaGrazing);
+
+         if (uAaPass < 0.5) {
+           if (aaCov < 0.90) discard;
+           gl_FragColor = vec4(col, alpha);
+         } else if (uAaPass < 1.5) {
+           if (aaCov >= 0.90 || aaCov <= 0.02) discard;
+           gl_FragColor = vec4(col, alpha * aaCov);
+         } else {
+           gl_FragColor = vec4(col, alpha * aaCov);
+         }
        }`
     );
 
@@ -1229,7 +1290,7 @@
       }
 
       // Dedicated lush foreground central mossy mound framing the lotus root
-      const moundCount = lowEnd ? 600 : 800;
+      const moundCount = lowEnd ? 800 : 1150;
       for (let i = 0; i < moundCount; i++) {
         if (!(i & 511)) await yieldSlice();
         const z = 2.6 + R() * 5.0;
@@ -1295,7 +1356,20 @@
         [-1.6, 5.4, 3, 0.76, 0.72, 0.93],
         [1.7, 5.5, 7, 0.76, 0.72, 0.93],
         [-4.6, 4.0, 1, 1.02, 0.95, 0.95],
-        [4.8, 4.2, 5, 1.02, 0.95, 0.95]
+        [4.8, 4.2, 5, 1.02, 0.95, 0.95],
+        [-0.85, 1.9, 2, 0.92, 0.80, 0.95],
+        [0.9, 2.0, 7, 0.92, 0.80, 0.95],
+        [-2.1, 1.9, 0, 0.98, 0.86, 0.95],
+        [2.2, 2.0, 3, 0.98, 0.86, 0.95],
+        [-3.9, 2.5, 6, 1.06, 0.94, 0.95],
+        [4.0, 2.6, 4, 1.06, 0.94, 0.95],
+        [-0.1, 2.6, 1, 0.86, 0.78, 0.94],
+        [-2.9, 3.6, 7, 1.02, 0.94, 0.95],
+        [3.0, 3.7, 5, 1.02, 0.94, 0.95],
+        [-1.2, 4.5, 2, 0.90, 0.84, 0.94],
+        [1.3, 4.6, 6, 0.90, 0.84, 0.94],
+        [-5.5, 5.2, 0, 1.12, 1.04, 0.95],
+        [5.6, 5.3, 4, 1.12, 1.04, 0.95]
       );
 
       // Midground valley pockets on slopes + sparse faint center canyon floor wisps
@@ -1315,7 +1389,11 @@
       for (let b = 0; b < beds.length; b++) {
         await yieldSlice();
         const [bx, bz, k, w, d, litBoost] = beds[b];
-        const families = Math.min(26, Math.round(w * d * 5.6 + 5));
+        const families = bz < 9.5
+          ? Math.min(40, Math.round(w * d * 8.2 + 8))
+          : bz < 22.0
+            ? Math.min(28, Math.round(w * d * 6.0 + 5))
+            : Math.min(20, Math.round(w * d * 4.5 + 4));
         for (let f = 0; f < families; f++) {
           const a = R() * TAU;
           const rr = Math.sqrt(R());
@@ -1326,7 +1404,11 @@
           if (!insideMeadowFrustum(fx, fz, false)) continue;
           const baseFl = (0.26 + R() * 0.23) * (fz > 14 ? 1.0 + (fz - 14) * 0.044 : 1.0);
           const lf = (0.90 + R() * 0.12) * litBoost;
-          const clusterCount = 2 + Math.floor(R() * 3);
+          const clusterCount = bz < 9.5
+            ? 3 + Math.floor(R() * 4)
+            : bz < 22.0
+              ? 2 + Math.floor(R() * 3)
+              : 2 + Math.floor(R() * 2);
           const clusterSpread = 0.48 + (fz > 16 ? (fz - 16) * 0.022 : 0);
           for (let i = 0; i < clusterCount; i++) {
             const xx = fx + (R() - 0.5) * clusterSpread;
@@ -1438,6 +1520,7 @@
       uState: gl.getUniformLocation(sakuraMeshProg, "uState"),
       uAim: gl.getUniformLocation(sakuraMeshProg, "uAim"),
       uSettle: gl.getUniformLocation(sakuraMeshProg, "uSettle"),
+      uAaPass: gl.getUniformLocation(sakuraMeshProg, "uAaPass"),
     };
 
     const pvAttrs = {
@@ -1632,11 +1715,10 @@
       gl.disableVertexAttribArray(pvAttrs.aStyle);
       gl.disableVertexAttribArray(pvAttrs.aExtra);
 
-      // 3. Central 3D Curved Luminous Lotus Blossom
+      // 3. Central 3D Curved Luminous Lotus Blossom (with shader-based edge AA)
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
       gl.clear(gl.DEPTH_BUFFER_BIT);
       gl.enable(gl.DEPTH_TEST);
-      gl.depthMask(settleMix < 0.35);
       gl.useProgram(sakuraMeshProg);
       gl.bindBuffer(gl.ARRAY_BUFFER, sakuraMesh.buffer);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, sakuraMesh.indexBuffer);
@@ -1652,7 +1734,22 @@
       gl.uniform2f(smUniforms.uAim, ax, ay);
       gl.uniform1f(smUniforms.uSettle, settleMix);
 
-      gl.drawElements(gl.TRIANGLES, sakuraMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+      if (settleMix < 0.35) {
+        gl.depthMask(true);
+        gl.depthFunc(gl.LESS);
+        gl.uniform1f(smUniforms.uAaPass, 0.0);
+        gl.drawElements(gl.TRIANGLES, sakuraMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+        gl.depthMask(false);
+        gl.depthFunc(gl.LEQUAL);
+        gl.uniform1f(smUniforms.uAaPass, 1.0);
+        gl.drawElements(gl.TRIANGLES, sakuraMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        gl.depthFunc(gl.LESS);
+      } else {
+        gl.depthMask(false);
+        gl.uniform1f(smUniforms.uAaPass, 2.0);
+        gl.drawElements(gl.TRIANGLES, sakuraMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+      }
 
       gl.disableVertexAttribArray(smAttrs.aPetalUV);
       gl.disableVertexAttribArray(smAttrs.aPetalDim);
