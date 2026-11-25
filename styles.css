@@ -446,8 +446,7 @@ body[data-stage="open"] .intro-stage {
 }
 
 .intro-greeting.is-interacting .greeting-char {
-  filter: brightness(calc(1 + var(--cg, 0) * 0.34)) drop-shadow(0 0 calc(var(--cg, 0) * 18px) rgba(255, 112, 190, 0.95));
-  will-change: transform, filter;
+  will-change: transform;
 }
 
 .greeting-space {

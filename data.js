@@ -49,10 +49,7 @@ window.PORTFOLIO_DATA = {
       { label: "tools", value: "8" },
       { label: "craft", value: "✦" },
     ],
-    badges: [
-      { label: "digital garden", icon: "lotus" },
-      { label: "craft & code", icon: "sparkle" },
-    ],
+    badges: [],
   },
 
   activeUsesSection: {

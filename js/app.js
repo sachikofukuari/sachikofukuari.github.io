@@ -399,7 +399,6 @@
           curY: 0,
           curS: 1,
           curR: 0,
-          curG: 0,
         });
       }
     }
@@ -466,7 +465,6 @@
       let tgtCy = 0;
       let tgtCs = 1;
       let tgtCr = 0;
-      let tgtCg = 0;
 
       if (interactive) {
         const dx = item.cx + greetingState.curGx - greetingState.px;
@@ -478,7 +476,6 @@
           tgtCy = -prox * 11;
           tgtCs = 1 + prox * 0.22;
           tgtCr = Math.max(-7, Math.min(7, (dx / radius) * -10 * prox));
-          tgtCg = prox;
         }
       }
 
@@ -486,22 +483,19 @@
       item.curY += (tgtCy - item.curY) * ease;
       item.curS += (tgtCs - item.curS) * ease;
       item.curR += (tgtCr - item.curR) * ease;
-      item.curG += (tgtCg - item.curG) * ease;
 
       maxDelta = Math.max(
         maxDelta,
         Math.abs(tgtCx - item.curX),
         Math.abs(tgtCy - item.curY),
         Math.abs(tgtCs - item.curS) * 40,
-        Math.abs(tgtCr - item.curR),
-        Math.abs(tgtCg - item.curG) * 40
+        Math.abs(tgtCr - item.curR)
       );
 
       item.el.style.setProperty("--cx", `${item.curX.toFixed(2)}px`);
       item.el.style.setProperty("--cy", `${item.curY.toFixed(2)}px`);
       item.el.style.setProperty("--cs", item.curS.toFixed(3));
       item.el.style.setProperty("--cr", `${item.curR.toFixed(2)}deg`);
-      item.el.style.setProperty("--cg", item.curG.toFixed(3));
     }
 
     if (maxDelta > 0.015) {
@@ -542,12 +536,10 @@
       item.curY = 0;
       item.curS = 1;
       item.curR = 0;
-      item.curG = 0;
       item.el.style.setProperty("--cx", "0px");
       item.el.style.setProperty("--cy", "0px");
       item.el.style.setProperty("--cs", "1");
       item.el.style.setProperty("--cr", "0deg");
-      item.el.style.setProperty("--cg", "0");
     }
   }
 
@@ -706,13 +698,6 @@
             .join("")}</div>`
         : "";
 
-    const badgesHtml =
-      Array.isArray(p.badges) && p.badges.length > 0
-        ? `<div class="hero-badges-strip">${p.badges
-            .map((b) => `<span class="mini-badge">${getSmallIconSvg(b.icon)} ${esc(b.label)}</span>`)
-            .join("")}</div>`
-        : "";
-
     const sakura = DATA.decorations?.sakuraAccents !== false;
 
     return `
@@ -744,7 +729,6 @@
             </div>
           </div>
         </section>
-        ${badgesHtml}
       </div>
     `;
   }
