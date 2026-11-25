@@ -1486,13 +1486,16 @@ export function createLotusScene(canvas, options) {
       }
 
       // 4. Delicate Sakura Stamens Inside Blossom Throat (role = 1, tile = 15)
+      // The shader positions stamens from aExtra.w; aBase.z is only the depth-sort key.
+      // Sorting them at the lotus depth keeps them in the back slice: drawn BEFORE the
+      // lotus petals (so petals cover them) and before the foreground flowerbed.
       for (let s = 0; s < 180; s++) {
         const a = R() * TAU;
         const r = Math.pow(R(), 0.65) * 0.62;
         const lx = C(a) * r;
         const ly = 0.22 + (1.0 - r * 0.55) * 0.7 + (R() - 0.5) * 0.16;
         const lz = S(a) * r;
-        pushParticle(lx, ly, 0.25, 0.24 + R() * 0.16, 15, R(), 1.15, 1.0, 1.0, a, 0.5, lz);
+        pushParticle(lx, ly, SAKURA_Z + 0.2 + lz * 0.5, 0.24 + R() * 0.16, 15, R(), 1.15, 1.0, 1.0, a, 0.5, lz);
       }
 
       // 4.5 Soft Pink Bloom Halo Aura Behind Lotus Blossom (role = 3, tile = 34)
