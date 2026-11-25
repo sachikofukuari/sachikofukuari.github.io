@@ -572,7 +572,7 @@ function openPortfolio() {
   }, 620);
 }
 
-function closeToIntro() {
+function closeToIntro(restoreFocus = false) {
   if (stage === "intro" || transitionLocked) return;
   dialogCtrl.close();
   lockTransition(2300);
@@ -593,13 +593,17 @@ function closeToIntro() {
   lotusScene?.setBloom(false);
   greetingCtrl.playWriteAnimation();
 
-  setTimeout(() => {
-    if (stage === "intro") introTrigger?.focus({ preventScroll: true });
-  }, 280);
+  if (restoreFocus) {
+    setTimeout(() => {
+      if (stage === "intro") introTrigger?.focus({ preventScroll: true });
+    }, 280);
+  } else if (document.activeElement instanceof HTMLElement) {
+    document.activeElement.blur();
+  }
 }
 
 introTrigger?.addEventListener("click", openPortfolio);
-btnBackIntro?.addEventListener("click", closeToIntro);
+btnBackIntro?.addEventListener("click", (e) => closeToIntro(e.detail === 0));
 
 window.addEventListener(
   "wheel",
@@ -680,7 +684,7 @@ window.addEventListener("keydown", (e) => {
 
   if (stage === "open") {
     if (e.key === "Escape" && !dialogCtrl.isOpen()) {
-      closeToIntro();
+      closeToIntro(true);
       return;
     }
     if (!dialogCtrl.isOpen()) {

@@ -656,44 +656,44 @@ export function createLotusScene(canvas, options) {
          float wEnv = lotusWidth(u);
          float breath = sin(t * 0.85 + petalAz * 2.0 + u) * mix(0.008, 0.020, rb);
 
-         // 1. Fully closed, sealed teardrop lotus bud (rb = 0): all tips converge cleanly to r = 0 at u = 1
-         float budH = 3.52 + 0.14 * ringNorm;
+         // 1. Fully closed, sealed teardrop lotus bud (rb = 0): outer petals wrap cleanly taller & wider over inner petals (r_outer > r_mid > r_inner at every height)
+         float budH = 3.66 - 0.22 * ringNorm;
          float yClosed = pow(uSafe, 0.90) * budH;
-         float shellR = mix(1.42, 1.02, ringNorm);
-         float baseC = mix(0.24, 0.08, ringNorm) * (1.0 - u) * (1.0 - u);
-         float rClosed = baseC + shellR * wEnv * (1.0 - 0.10 * u) + 0.008 * (1.0 - ringNorm) * (1.0 - u);
+         float shellR = mix(1.48, 0.94, ringNorm);
+         float baseC = mix(0.28, 0.08, ringNorm) * (1.0 - u) * (1.0 - u);
+         float rClosed = baseC + shellR * wEnv * (1.0 - 0.08 * u) + 0.025 * (1.0 - ringNorm) * (1.0 - u);
 
          // 2. Fully open cupped upward-curving lotus blossom (rb = 1): pointed tips always curve up into view
-         float openTilt = mix(1.10, 0.46, ringNorm) + breath;
+         float openTilt = mix(1.12, 0.44, ringNorm) + breath;
          float along = u * len * (1.0 - 0.12 * rb);
-         float baseO = mix(0.46, 0.12, ringNorm);
+         float baseO = mix(0.50, 0.12, ringNorm);
          float bellyArc = sin(u * 3.14159265) * mix(0.24, 0.12, ringNorm);
-         float tipLift = pow(uSafe, 2.2) * mix(0.34, 0.20, ringNorm);
-         float spoon = mix(0.11, 0.07, ringNorm) * wEnv * (1.0 - v * v);
+         float tipLift = pow(uSafe, 2.2) * mix(0.32, 0.20, ringNorm);
+         float spoon = mix(0.10, 0.06, ringNorm) * wEnv * (1.0 - v * v);
          float nRadO = cos(openTilt);
          float nYO = -sin(openTilt);
          float rOpen = baseO + sin(openTilt) * along + nRadO * (bellyArc + spoon);
          float yOpen = 0.44 + cos(openTilt) * along + nYO * (bellyArc + spoon) + tipLift;
 
          // Smooth closed-bud -> open-lotus peel
-         float peel = sin(rb * 3.14159265) * (0.14 * (1.0 - ringNorm)) * sin(u * 3.14159265);
+         float peel = sin(rb * 3.14159265) * (0.16 * (1.0 - ringNorm)) * sin(u * 3.14159265);
          float radial = mix(rClosed, rOpen, rb) + peel + breath * u * 0.42;
          float height = mix(yClosed, yOpen, rb);
 
-         // Subtle per-petal pillow + normal-aligned shingle (both proportional to wEnv -> 0 at tip)
+         // Subtle per-petal pillow + dominant shingle (strictly non-intersecting between adjacent same-ring petals)
          float effTilt = mix(0.12 + 0.14 * (1.0 - ringNorm), openTilt, rb);
          float nRad = cos(effTilt);
          float nY = -sin(effTilt);
-         float petalPillow = mix(0.036, 0.024, ringNorm) * wEnv * (1.0 - v * v) * (1.0 - rb * 0.65);
-         float shingle = v * wEnv * (0.044 + 0.048 * rb);
+         float petalPillow = mix(0.022, 0.016, ringNorm) * wEnv * (1.0 - v * v) * (1.0 - rb * 0.65);
+         float shingle = v * wEnv * (0.052 + 0.050 * rb);
 
          float rEff = radial + nRad * (petalPillow + shingle);
          float yEff = height + nY * (petalPillow + shingle);
 
          // Exact width-preserving arc wrap (closed) -> tangential fan + enlarged bloom petals: STRICTLY 0 width at u = 1.0 for ALL rb
-         float halfW = wEnv * (maxW * 0.5) * (1.28 + 0.14 * rb + settle * 0.12);
-         float wrapR = max(rEff, 0.035);
-         float arcAng = clamp((v * halfW) / wrapR, -1.02, 1.02) * (1.0 - rb);
+         float halfW = wEnv * (maxW * 0.5) * (1.24 + 0.14 * rb + settle * 0.12);
+         float wrapR = max(rEff, 0.04);
+         float arcAng = clamp((v * halfW) / wrapR, -0.76, 0.76) * (1.0 - rb);
          float tangOpen = v * halfW * rb;
 
          float ang = petalAz + arcAng;
