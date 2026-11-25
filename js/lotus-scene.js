@@ -50,6 +50,7 @@
   window.createLotusScene = function createLotusScene(canvas, options) {
     const opts = options || {};
     const onFallback = typeof opts.onFallback === "function" ? opts.onFallback : function () {};
+    const skyCanvas = opts.skyCanvas || document.getElementById("sky-canvas");
 
     let disposed = false;
     let paused = !!opts.paused;
@@ -78,7 +79,8 @@
     const lowEnd = isSmallScreen;
 
     const gl = canvas.getContext("webgl", {
-      alpha: false,
+      alpha: true,
+      premultipliedAlpha: true,
       depth: true,
       antialias: false,
       preserveDrawingBuffer: false,
@@ -88,6 +90,17 @@
       triggerFallback();
       return createNoopApi();
     }
+
+    const skyGl =
+      skyCanvas && skyCanvas !== canvas
+        ? skyCanvas.getContext("webgl", {
+            alpha: false,
+            depth: false,
+            antialias: false,
+            preserveDrawingBuffer: false,
+          })
+        : null;
+    const bgGl = skyGl || gl;
 
     const hasDerivatives = Boolean(gl.getExtension("OES_standard_derivatives"));
 
@@ -466,29 +479,34 @@
     // ------------------------------------------------------------------------
     // Shader Programs (Dark Rose Theme Only)
     // ------------------------------------------------------------------------
-    function compileProgram(vSrc, fSrc) {
-      const prog = gl.createProgram();
+    function compileProgramFor(targetGl, vSrc, fSrc) {
+      const prog = targetGl.createProgram();
       for (const [src, type] of [
-        [vSrc, gl.VERTEX_SHADER],
-        [fSrc, gl.FRAGMENT_SHADER],
+        [vSrc, targetGl.VERTEX_SHADER],
+        [fSrc, targetGl.FRAGMENT_SHADER],
       ]) {
-        const sh = gl.createShader(type);
-        gl.shaderSource(sh, src);
-        gl.compileShader(sh);
-        if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
-          throw new Error(gl.getShaderInfoLog(sh) || "Shader compile error");
+        const sh = targetGl.createShader(type);
+        targetGl.shaderSource(sh, src);
+        targetGl.compileShader(sh);
+        if (!targetGl.getShaderParameter(sh, targetGl.COMPILE_STATUS)) {
+          throw new Error(targetGl.getShaderInfoLog(sh) || "Shader compile error");
         }
-        gl.attachShader(prog, sh);
+        targetGl.attachShader(prog, sh);
       }
-      gl.linkProgram(prog);
-      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-        throw new Error(gl.getProgramInfoLog(prog) || "Program link error");
+      targetGl.linkProgram(prog);
+      if (!targetGl.getProgramParameter(prog, targetGl.LINK_STATUS)) {
+        throw new Error(targetGl.getProgramInfoLog(prog) || "Program link error");
       }
       return prog;
     }
 
+    function compileProgram(vSrc, fSrc) {
+      return compileProgramFor(gl, vSrc, fSrc);
+    }
+
     // 1. Pink Twilight Starry Sky + Wandering Slight-White Glow + Mountain Sill
-    const bgProg = compileProgram(
+    const bgProg = compileProgramFor(
+      bgGl,
       `attribute vec2 pos;
        varying vec2 uv;
        void main() {
@@ -618,6 +636,7 @@
        uniform vec2 uAim;
 
        varying vec2 vUv;
+       varying vec2 vNdc;
        varying float vDist;
        varying float vSide;
        varying float vRing;
@@ -670,8 +689,8 @@
          float rEff = radial + nRad * (petalPillow + shingle);
          float yEff = height + nY * (petalPillow + shingle);
 
-         // Exact width-preserving arc wrap (closed) -> tangential fan (open): STRICTLY 0 width at u = 1.0 for ALL rb
-         float halfW = wEnv * (maxW * 0.5) * (1.28 - 0.24 * rb + settle * 0.16);
+         // Exact width-preserving arc wrap (closed) -> tangential fan + enlarged bloom petals: STRICTLY 0 width at u = 1.0 for ALL rb
+         float halfW = wEnv * (maxW * 0.5) * (1.28 + 0.14 * rb + settle * 0.12);
          float wrapR = max(rEff, 0.035);
          float arcAng = clamp((v * halfW) / wrapR, -1.02, 1.02) * (1.0 - rb);
          float tangOpen = v * halfW * rb;
@@ -682,8 +701,8 @@
          float rx = rEff * ca - tangOpen * sa;
          float rz = rEff * sa + tangOpen * ca;
 
-         float scaleL = 1.0 + rb * 0.02 + settle * 0.10;
-         vec3 anchor = vec3(0.0, 0.42, 8.5);
+         float scaleL = 1.0 + rb * 0.38 + settle * 0.14;
+         vec3 anchor = vec3(0.0, 0.42, 8.5 - rb * 0.85);
          return anchor + vec3(rx, yEff + settle * 0.12 * u, rz) * scaleL;
        }
 
@@ -721,6 +740,7 @@
          gl_Position = vec4(p, zn * dep, dep);
 
          vUv = vec2(u, v);
+         vNdc = p / max(0.1, dep);
          vDist = clamp(u, 0.0, 1.0);
          vSide = v * lotusWidth(u);
          vRing = ringNorm;
@@ -732,8 +752,12 @@
        uniform float uSettle;
        uniform float uAaPass;
        uniform vec4 uCamera;
+       uniform vec4 uAction;
+       uniform vec2 uState;
+       uniform vec2 uAim;
 
        varying vec2 vUv;
+       varying vec2 vNdc;
        varying float vDist;
        varying float vSide;
        varying float vRing;
@@ -791,6 +815,13 @@
          float rimEdge = max(smoothstep(0.76, 0.98, abs(v)), smoothstep(0.82, 0.99, u)) * (1.0 - uSettle);
          col = mix(col, vec3(1.0, 0.86, 0.93), clamp(rimEdge * 0.28 + rim * 0.38 * (1.0 - uSettle * 0.55), 0.0, 0.55));
 
+         // Localized glowing blooming highlight directly under hovering cursor
+         vec2 hDiff = vNdc - uAim;
+         hDiff.x *= uState.y;
+         float hoverClos = exp(-dot(hDiff, hDiff) * 10.5) * uAction.w * (1.0 - uSettle * 0.72);
+         col *= 1.0 + hoverClos * 0.38;
+         col += vec3(1.0, 0.72, 0.88) * hoverClos * (0.28 + 0.16 * vBloom + 0.12 * d);
+
          // Pastel-preserving bloom rolloff (keeps glow airy pastel pink without clipping to white)
          col = (col / (vec3(1.0) + col * 0.22)) * 1.14;
          col.g = min(col.g, col.r * 0.84);
@@ -819,12 +850,14 @@
 
          if (uAaPass < 0.5) {
            if (aaCov < 0.90) discard;
-           gl_FragColor = vec4(col, alpha);
+           gl_FragColor = vec4(col * alpha, alpha);
          } else if (uAaPass < 1.5) {
            if (aaCov >= 0.90 || aaCov <= 0.02) discard;
-           gl_FragColor = vec4(col, alpha * aaCov);
+           float a = alpha * aaCov;
+           gl_FragColor = vec4(col * a, a);
          } else {
-           gl_FragColor = vec4(col, alpha * aaCov);
+           float a = alpha * aaCov;
+           gl_FragColor = vec4(col * a, a);
          }
        }`
     );
@@ -877,11 +910,12 @@
          float scatterGlow = 0.0;
 
          if (isHeart > 0.5) {
-           vec3 anchor = vec3(0.0, 0.42, 8.5);
+           float heartScale = 1.0 + bloom * 0.38 + settle * 0.14;
+           vec3 anchor = vec3(0.0, 0.42, 8.5 - bloom * 0.85);
            float hReveal = smoothstep(0.24, 0.88, bloom);
-           float lx = aBase.x * (0.45 + 0.65 * hReveal) + 0.025 * sin(t * 1.4 + ang);
-           float ly = 0.28 + 0.52 * bloom + aBase.y * (0.55 + 0.45 * hReveal) + 0.02 * cos(t * 1.1 + ang);
-           float lz = aExtra.w * (0.45 + 0.65 * hReveal);
+           float lx = aBase.x * (0.45 + 0.65 * hReveal) * heartScale + 0.025 * sin(t * 1.4 + ang);
+           float ly = (0.28 + 0.52 * bloom + aBase.y * (0.55 + 0.45 * hReveal)) * heartScale + 0.02 * cos(t * 1.1 + ang);
+           float lz = aExtra.w * (0.45 + 0.65 * hReveal) * heartScale;
            x = anchor.x + lx;
            y = anchor.y + ly;
            z = anchor.z + lz;
@@ -890,9 +924,10 @@
            scatterGlow = hReveal * 0.48 * (1.0 - settle * 0.75);
            defocus = mix(0.0, 0.92, settle);
          } else if (isAura > 0.5) {
-           vec3 anchor = vec3(0.0, 0.42, 8.5);
-           x = anchor.x + aBase.x * (0.95 + 0.55 * bloom);
-           y = anchor.y + aBase.y * (1.0 - 0.12 * bloom);
+           float auraScale = 1.0 + bloom * 0.34;
+           vec3 anchor = vec3(0.0, 0.42, 8.5 - bloom * 0.85);
+           x = anchor.x + aBase.x * (0.95 + 0.55 * bloom) * auraScale;
+           y = anchor.y + aBase.y * (1.0 - 0.12 * bloom) * auraScale;
            z = anchor.z + aExtra.w;
            opacity = (0.11 + 0.08 * bloom) * (1.0 - settle * 0.48);
            spriteRot = 0.0;
@@ -1067,11 +1102,15 @@
        }`
     );
 
-    function makeBuffer(data) {
-      const b = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, b);
-      gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    function makeBufferOn(targetGl, data) {
+      const b = targetGl.createBuffer();
+      targetGl.bindBuffer(targetGl.ARRAY_BUFFER, b);
+      targetGl.bufferData(targetGl.ARRAY_BUFFER, data, targetGl.STATIC_DRAW);
       return b;
+    }
+
+    function makeBuffer(data) {
+      return makeBufferOn(gl, data);
     }
 
     function makeElementBuffer(data) {
@@ -1081,7 +1120,7 @@
       return b;
     }
 
-    const quadBuf = makeBuffer(new Float32Array([-1, -1, 3, -1, -1, 3]));
+    const bgQuadBuf = makeBufferOn(bgGl, new Float32Array([-1, -1, 3, -1, -1, 3]));
 
     // ------------------------------------------------------------------------
     // Siltora V-Shaped Valley + Non-Intersecting 3D Lotus Builder
@@ -1220,8 +1259,11 @@
 
     let raf = 0;
     let lastNow = 0;
+    let lastSkyNow = 0;
     let widthPx = 0;
     let heightPx = 0;
+    let skyWidthPx = 0;
+    let skyHeightPx = 0;
     let avgGap = 16;
     let budgetAt = 0;
     let budget = lowEnd ? 1400000 : 3400000;
@@ -1503,10 +1545,10 @@
       wake();
     }
 
-    const bgPosLoc = gl.getAttribLocation(bgProg, "pos");
+    const bgPosLoc = bgGl.getAttribLocation(bgProg, "pos");
     const bgUniforms = {
-      uTime: gl.getUniformLocation(bgProg, "uTime"),
-      uAspect: gl.getUniformLocation(bgProg, "uAspect"),
+      uTime: bgGl.getUniformLocation(bgProg, "uTime"),
+      uAspect: bgGl.getUniformLocation(bgProg, "uAspect"),
     };
 
     const smAttrs = {
@@ -1668,19 +1710,49 @@
       const camZ = -0.35;
       const camPitch = -0.02;
 
-      gl.disable(gl.DEPTH_TEST);
-      gl.disable(gl.CULL_FACE);
-      gl.disable(gl.BLEND);
+      // 1. Starry AMOLED dark sky + V-valley silhouette (dedicated background canvas below intro copy)
+      if (skyGl && skyCanvas && skyCanvas.isConnected) {
+        const skyDpr = Math.min(window.devicePixelRatio || 1, 1.0);
+        const sW = Math.max(2, Math.round(cw * skyDpr));
+        const sH = Math.max(2, Math.round(ch * skyDpr));
+        const skyResized = skyWidthPx !== sW || skyHeightPx !== sH;
+        if (skyResized) {
+          skyCanvas.width = skyWidthPx = sW;
+          skyCanvas.height = skyHeightPx = sH;
+          skyGl.viewport(0, 0, skyWidthPx, skyHeightPx);
+        }
+        if (skyResized || lastSkyNow === 0 || now - lastSkyNow >= 40) {
+          lastSkyNow = now;
+          skyGl.disable(skyGl.DEPTH_TEST);
+          skyGl.disable(skyGl.CULL_FACE);
+          skyGl.disable(skyGl.BLEND);
+          skyGl.useProgram(bgProg);
+          skyGl.bindBuffer(skyGl.ARRAY_BUFFER, bgQuadBuf);
+          skyGl.enableVertexAttribArray(bgPosLoc);
+          skyGl.vertexAttribPointer(bgPosLoc, 2, skyGl.FLOAT, false, 0, 0);
+          skyGl.uniform1f(bgUniforms.uTime, tClock);
+          skyGl.uniform1f(bgUniforms.uAspect, skyWidthPx / skyHeightPx);
+          skyGl.drawArrays(skyGl.TRIANGLES, 0, 3);
+          skyGl.disableVertexAttribArray(bgPosLoc);
+        }
 
-      // 1. Starry AMOLED dark sky + V-valley silhouette
-      gl.useProgram(bgProg);
-      gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
-      gl.enableVertexAttribArray(bgPosLoc);
-      gl.vertexAttribPointer(bgPosLoc, 2, gl.FLOAT, false, 0, 0);
-      gl.uniform1f(bgUniforms.uTime, tClock);
-      gl.uniform1f(bgUniforms.uAspect, aspect);
-      gl.drawArrays(gl.TRIANGLES, 0, 3);
-      gl.disableVertexAttribArray(bgPosLoc);
+        gl.disable(gl.DEPTH_TEST);
+        gl.disable(gl.CULL_FACE);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      } else {
+        gl.disable(gl.DEPTH_TEST);
+        gl.disable(gl.CULL_FACE);
+        gl.disable(gl.BLEND);
+        gl.useProgram(bgProg);
+        gl.bindBuffer(gl.ARRAY_BUFFER, bgQuadBuf);
+        gl.enableVertexAttribArray(bgPosLoc);
+        gl.vertexAttribPointer(bgPosLoc, 2, gl.FLOAT, false, 0, 0);
+        gl.uniform1f(bgUniforms.uTime, tClock);
+        gl.uniform1f(bgUniforms.uAspect, aspect);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        gl.disableVertexAttribArray(bgPosLoc);
+      }
 
       // 2. Deep & midground meadow behind the lotus (premultiplied alpha eliminates dark fringes)
       gl.enable(gl.BLEND);
@@ -1705,7 +1777,7 @@
       gl.uniform1i(pvUniforms.uImage, 0);
 
       const bSmooth = bloomMix * bloomMix * (3 - 2 * bloomMix);
-      const splitZ = SAKURA_Z - 0.55 - bSmooth * 1.35;
+      const splitZ = SAKURA_Z - bSmooth * 0.85 - 0.65 - bSmooth * 1.45;
       const splitIdx = findSplitIndex(splitZ);
 
       drawPointSlice(0, splitIdx);
@@ -1714,8 +1786,8 @@
       gl.disableVertexAttribArray(pvAttrs.aStyle);
       gl.disableVertexAttribArray(pvAttrs.aExtra);
 
-      // 3. Central 3D Curved Luminous Lotus Blossom (with shader-based edge AA)
-      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      // 3. Central 3D Curved Luminous Lotus Blossom (premultiplied AA on transparent foreground canvas)
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       gl.clear(gl.DEPTH_BUFFER_BIT);
       gl.enable(gl.DEPTH_TEST);
       gl.useProgram(sakuraMeshProg);
@@ -1905,6 +1977,7 @@
         canvas.removeEventListener("webglcontextlost", onContextLost);
         reducedMotionMQ.removeEventListener("change", wake);
         gl.getExtension("WEBGL_lose_context")?.loseContext();
+        skyGl?.getExtension("WEBGL_lose_context")?.loseContext();
       },
     };
   };

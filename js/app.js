@@ -492,6 +492,7 @@
 
   const lotusScene = window.createLotusScene
     ? window.createLotusScene(document.getElementById("lotus-canvas"), {
+        skyCanvas: document.getElementById("sky-canvas"),
         initialOpen: false,
         paused: motionPaused,
       })
@@ -611,6 +612,7 @@
             curY: 0,
             curS: 1,
             curR: 0,
+            curG: 0,
           });
         }
       }
@@ -770,6 +772,7 @@
       let tgtCy = 0;
       let tgtCs = 1;
       let tgtCr = 0;
+      let tgtCg = 0;
 
       if (interactive) {
         const dx = item.cx + greetingState.curGx - greetingState.px;
@@ -781,6 +784,7 @@
           tgtCy = -prox * 11;
           tgtCs = 1 + prox * 0.22;
           tgtCr = Math.max(-7, Math.min(7, (dx / radius) * -10 * prox));
+          tgtCg = prox;
         }
       }
 
@@ -788,19 +792,22 @@
       item.curY += (tgtCy - item.curY) * ease;
       item.curS += (tgtCs - item.curS) * ease;
       item.curR += (tgtCr - item.curR) * ease;
+      item.curG += (tgtCg - item.curG) * ease;
 
       maxDelta = Math.max(
         maxDelta,
         Math.abs(tgtCx - item.curX),
         Math.abs(tgtCy - item.curY),
         Math.abs(tgtCs - item.curS) * 40,
-        Math.abs(tgtCr - item.curR)
+        Math.abs(tgtCr - item.curR),
+        Math.abs(tgtCg - item.curG) * 30
       );
 
       item.el.style.setProperty("--cx", `${item.curX.toFixed(2)}px`);
       item.el.style.setProperty("--cy", `${item.curY.toFixed(2)}px`);
       item.el.style.setProperty("--cs", item.curS.toFixed(3));
       item.el.style.setProperty("--cr", `${item.curR.toFixed(2)}deg`);
+      item.el.style.setProperty("--cg", item.curG.toFixed(3));
     }
 
     if (maxDelta > 0.015) {
@@ -841,10 +848,12 @@
       item.curY = 0;
       item.curS = 1;
       item.curR = 0;
+      item.curG = 0;
       item.el.style.setProperty("--cx", "0px");
       item.el.style.setProperty("--cy", "0px");
       item.el.style.setProperty("--cs", "1");
       item.el.style.setProperty("--cr", "0deg");
+      item.el.style.setProperty("--cg", "0");
     }
   }
 
@@ -1300,7 +1309,7 @@
     const defaultVolRaw = raw.defaultVolume ?? 50;
     const defaultVolume = Math.max(0, Math.min(100, Number.isFinite(Number(defaultVolRaw)) ? Math.round(Number(defaultVolRaw)) : 50));
     return {
-      heading: loc(raw, "heading", "favourite song right now"),
+      heading: loc(raw, "heading", "favourite song"),
       videoId,
       startAtSec,
       defaultVolume,
@@ -1857,7 +1866,7 @@
           hr
             ? `<div id="vitals-widget" class="widget-card vitals-widget${isLive ? " is-live" : ""}"${beatStyle}>
                 <div class="widget-eyebrow-row">
-                  <span class="widget-eyebrow-label"><span class="vitals-dot" aria-hidden="true"></span><span>${esc(loc(hr, "heading", "live vitals"))}</span></span>
+                  <span class="widget-eyebrow-label"><span class="vitals-dot" aria-hidden="true"></span><span>${esc(loc(hr, "heading", "vitals"))}</span></span>
                   <span class="vitals-tz-pill">${esc(hr.timezoneLabel || "UTC+7")}</span>
                 </div>
                 <div class="vitals-metrics">

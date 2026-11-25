@@ -47,7 +47,7 @@ window.PORTFOLIO_DATA = {
     subName: "(幸子福有)",
     tag: "@sachikofukuari",
     description: "be kind! 💖🌸 ",
-    banner: "assets/images/banner.jpg?v=8",
+    banner: "assets/images/banner.jpg?v=9",
     bannerCredit: "Art by Takeshima Eku",
     // Your Discord User ID (auto-syncs your current Discord profile picture)
     discordUserId: "732043268946133133",
@@ -63,7 +63,7 @@ window.PORTFOLIO_DATA = {
   // Paste any YouTube / youtu.be / YouTube Music URL in `youtubeUrl`.
   // `startAt` supports "3:00" (mm:ss) or seconds (e.g. 180). `defaultVolume` is 0-100.
   music: {
-    heading: "favourite song right now",
+    heading: "favourite song",
     youtubeUrl: "https://youtu.be/6RWCiktXFfI?si=29Jsj7z8XsWH83Zh",
     startAt: "3:00",
     defaultVolume: 50,
@@ -72,13 +72,13 @@ window.PORTFOLIO_DATA = {
     album: "Sketch a Rose",
     coverImage: "",
     vi: {
-      heading: "bài hát yêu thích lúc này",
+      heading: "bài hát yêu thích",
     },
   },
 
-  // 4. LIVE VITALS WIDGET (RIGHT HOME WIDGET)
+  // 4. VITALS WIDGET (RIGHT HOME WIDGET)
   vitals: {
-    heading: "live vitals",
+    heading: "vitals",
     timezone: "Asia/Ho_Chi_Minh",
     timezoneLabel: "UTC+7",
     liveLabel: "live",
@@ -87,7 +87,7 @@ window.PORTFOLIO_DATA = {
     pulsoidWsUrl: "wss://dev.pulsoid.net/api/v1/data/real_time?access_token=859d5fed-9af3-4f09-bc8f-98cd4c5df159&response_mode=legacy_json",
     offlineTimeoutMs: 15000,
     vi: {
-      heading: "nhịp tim trực tiếp",
+      heading: "nhịp tim",
       liveLabel: "trực tiếp",
       offlineNote: "máy đo hiện chưa bật",
       localTimeLabel: "giờ địa phương",

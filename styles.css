@@ -159,6 +159,7 @@ a {
  * ============================================================================ */
 
 .bg-fallback,
+.sky-canvas,
 .lotus-canvas,
 .lotus-svg-fallback,
 .petal-cursor-canvas {
@@ -176,8 +177,15 @@ a {
   transition: background 0.45s ease;
 }
 
-.lotus-canvas {
+.sky-canvas {
   z-index: 1;
+  display: block;
+  opacity: 0;
+  transition: opacity 0.65s ease;
+}
+
+.lotus-canvas {
+  z-index: 10;
   display: block;
   opacity: 0;
   transform: scale(1);
@@ -200,7 +208,7 @@ body[data-transitioning="true"] .lotus-canvas {
 .open-blur-veil {
   position: fixed;
   inset: 0;
-  z-index: 4;
+  z-index: 12;
   pointer-events: none;
   view-transition-name: none;
   background: rgba(8, 3, 7, 0.14);
@@ -242,6 +250,7 @@ body[data-stage="open"] .page-vignette {
   opacity: 0;
 }
 
+body.webgl-ready .sky-canvas,
 body.webgl-ready .lotus-canvas {
   opacity: 1;
 }
@@ -413,7 +422,7 @@ body[data-stage="open"] .back-intro-btn {
 .intro-stage {
   position: fixed;
   inset: 0;
-  z-index: 20;
+  z-index: 6;
   display: flex;
   align-items: stretch;
   justify-content: center;
@@ -505,11 +514,14 @@ body[data-stage="open"] .intro-stage {
   display: inline-block;
   text-shadow: inherit;
   transform: translate3d(var(--cx, 0px), var(--cy, 0px), 0) scale(var(--cs, 1)) rotate(var(--cr, 0deg));
+  filter:
+    brightness(calc(1 + var(--cg, 0) * 0.28))
+    drop-shadow(0 0 calc(var(--cg, 0) * 14px) rgba(255, 168, 216, calc(var(--cg, 0) * 0.90)));
 }
 
 .intro-greeting.is-interacting,
 .intro-greeting.is-interacting .greeting-char {
-  will-change: transform;
+  will-change: transform, filter;
 }
 
 .greeting-space {
