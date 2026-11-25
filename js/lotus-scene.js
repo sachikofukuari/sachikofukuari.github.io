@@ -71,16 +71,16 @@
     // ------------------------------------------------------------------------
     // Hardware-Tier Detection & WebGL Context Setup
     // ------------------------------------------------------------------------
-    const lowEnd =
-      (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) ||
-      (navigator.deviceMemory && navigator.deviceMemory <= 4) ||
-      window.innerWidth <= 820;
+    const isSmallScreen =
+      window.innerWidth <= 820 ||
+      (window.matchMedia("(pointer: coarse)").matches &&
+        Math.min(window.innerWidth, window.innerHeight) <= 900);
+    const lowEnd = isSmallScreen;
 
     const gl = canvas.getContext("webgl", {
       alpha: false,
       depth: true,
-      antialias: !lowEnd,
-      powerPreference: "low-power",
+      antialias: true,
       preserveDrawingBuffer: false,
     });
 
@@ -130,11 +130,16 @@
     }
 
     // ------------------------------------------------------------------------
-    // Procedural Botanical Sprite Atlas (1024x1024: sharp top + blur(9px) bokeh bottom)
+    // Procedural Botanical Sprite Atlas (2048x2048 sharp/bokeh halves on Retina)
     // ------------------------------------------------------------------------
+    const maxTexSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 2048;
+    const ATLAS_SIZE = maxTexSize >= 2048 ? 2048 : 1024;
+    const TILE_SIZE = ATLAS_SIZE / 8;
+    const TILE_SCALE = TILE_SIZE / 128;
+
     const atlas = document.createElement("canvas");
-    atlas.width = 1024;
-    atlas.height = 1024;
+    atlas.width = ATLAS_SIZE;
+    atlas.height = ATLAS_SIZE;
     const ac = atlas.getContext("2d");
 
     const flowerPalettes = [
@@ -152,19 +157,19 @@
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(angle);
-      const hue = 136 + (hueOffset || 0);
+      const hue = 114 + (hueOffset || 0);
       const g = ctx.createLinearGradient(-width, -len, width, 0);
-      g.addColorStop(0, `hsl(${hue - 12} 24% ${Math.min(72, lit * 1.62)}%)`);
-      g.addColorStop(0.48, `hsl(${hue} 17% ${Math.min(64, lit * 1.1)}%)`);
-      g.addColorStop(0.75, `hsl(${hue + 14} 15% ${lit * 0.74}%)`);
-      g.addColorStop(1, `hsl(334 20% ${lit * 0.56}%)`);
+      g.addColorStop(0, `hsl(${hue - 10} 34% ${Math.min(58, lit * 1.38)}%)`);
+      g.addColorStop(0.48, `hsl(${hue} 28% ${Math.min(48, lit * 0.96)}%)`);
+      g.addColorStop(0.76, `hsl(${hue + 10} 26% ${lit * 0.64}%)`);
+      g.addColorStop(1, `hsl(${hue + 16} 22% ${lit * 0.44}%)`);
       ctx.beginPath();
       ctx.moveTo(0, 0);
       ctx.bezierCurveTo(-width, -len * 0.34, -width * 0.65, -len * 0.77, 0, -len);
       ctx.bezierCurveTo(width * 0.56, -len * 0.68, width * 0.72, -len * 0.25, 0, 0);
       ctx.fillStyle = g;
       ctx.fill();
-      ctx.strokeStyle = "hsla(335, 36%, 80%, 0.34)";
+      ctx.strokeStyle = "hsla(112, 32%, 58%, 0.26)";
       ctx.lineWidth = 0.7;
       ctx.beginPath();
       ctx.moveTo(0, -len * 0.06);
@@ -175,10 +180,11 @@
 
     function drawSakuraStamenTile() {
       const tile = document.createElement("canvas");
-      tile.width = 128;
-      tile.height = 128;
+      tile.width = TILE_SIZE;
+      tile.height = TILE_SIZE;
       const g = tile.getContext("2d");
-      g.translate(64, 64);
+      g.translate(TILE_SIZE / 2, TILE_SIZE / 2);
+      g.scale(TILE_SCALE, TILE_SCALE);
       for (let i = 0; i < 24; i++) {
         const a = i * 2.39996;
         const r = 4 + Math.sqrt(i) * 5.6;
@@ -209,10 +215,11 @@
       }
 
       const tile = document.createElement("canvas");
-      tile.width = 128;
-      tile.height = 128;
+      tile.width = TILE_SIZE;
+      tile.height = TILE_SIZE;
       const c = tile.getContext("2d");
-      c.translate(64, 64);
+      c.translate(TILE_SIZE / 2, TILE_SIZE / 2);
+      c.scale(TILE_SCALE, TILE_SCALE);
 
       if (i < 12) {
         // Tiles 8..11: lower mossy base + dense leafy grass blades (fills gaps without burying wildflowers)
@@ -286,6 +293,22 @@
       }
 
       const k = (i - 16) % 8;
+      const isBluePal = k >= 6;
+      const bloomHalo = c.createRadialGradient(0, 0, 8, 0, 0, 58);
+      if (isBluePal) {
+        bloomHalo.addColorStop(0, "rgba(214, 238, 255, 0.48)");
+        bloomHalo.addColorStop(0.45, "rgba(154, 206, 255, 0.20)");
+        bloomHalo.addColorStop(1, "rgba(130, 190, 255, 0)");
+      } else {
+        bloomHalo.addColorStop(0, "rgba(255, 214, 236, 0.46)");
+        bloomHalo.addColorStop(0.45, "rgba(255, 162, 212, 0.19)");
+        bloomHalo.addColorStop(1, "rgba(255, 140, 204, 0)");
+      }
+      c.fillStyle = bloomHalo;
+      c.beginPath();
+      c.arc(0, 0, 58, 0, TAU);
+      c.fill();
+
       if (k === 2) {
         c.rotate(i >= 24 ? 0.17 : -0.19);
         c.scale(1, i >= 24 ? 0.88 : 0.72);
@@ -375,21 +398,6 @@
       c.rotate((R() - 0.5) * 1.4);
       const pal = flowerPalettes[k];
       const nPetals = [5, 6, 7, 5, 9, 6, 10, 5][k];
-      const isBluePal = k >= 6;
-      const bloomHalo = c.createRadialGradient(0, 0, 8, 0, 0, 58);
-      if (isBluePal) {
-        bloomHalo.addColorStop(0, "rgba(214, 238, 255, 0.62)");
-        bloomHalo.addColorStop(0.45, "rgba(154, 206, 255, 0.28)");
-        bloomHalo.addColorStop(1, "rgba(130, 190, 255, 0)");
-      } else {
-        bloomHalo.addColorStop(0, "rgba(255, 214, 236, 0.60)");
-        bloomHalo.addColorStop(0.45, "rgba(255, 162, 212, 0.26)");
-        bloomHalo.addColorStop(1, "rgba(255, 140, 204, 0)");
-      }
-      c.fillStyle = bloomHalo;
-      c.beginPath();
-      c.arc(0, 0, 58, 0, TAU);
-      c.fill();
 
       c.scale(1, 0.58 + R() * 0.4);
       for (let a = 0; a < nPetals; a++) {
@@ -522,18 +530,18 @@
        void main() {
          vec3 col = vec3(0.0);
 
-         // Subtle dark rose mountain sill tucked behind distant 3D flowerbeds
-         float sillScale = clamp((uAspect - 0.45) / 1.15, 0.42, 1.0);
-         float mLeft = (0.42 * sillScale) * exp(-pow(uv.x + 0.72, 2.0) * 3.8);
-         float mRight = (0.45 * sillScale) * exp(-pow(uv.x - 0.70, 2.0) * 3.7);
-         float mCenter = (0.09 * sillScale) * exp(-pow(uv.x - 0.02, 2.0) * 5.0);
-         float sillEdge = 0.02 + mLeft + mRight + mCenter + 0.012 * sin(uv.x * 5.0);
+         // V-valley canyon silhouette tucked behind steep 3D wildflower valley walls
+         float sillScale = clamp((uAspect - 0.45) / 1.15, 0.28, 1.0);
+         float ax = abs(uv.x);
+         float asym = uv.x < 0.0 ? 1.06 : 0.94;
+         float vWall = (0.04 + (ax * 0.44 + ax * ax * 0.44) * asym) * sillScale;
+         float sillEdge = vWall - 0.06 + 0.015 * sin(uv.x * 6.0);
          float sillMask = 1.0 - smoothstep(sillEdge - 0.14, sillEdge + 0.04, uv.y);
-         vec3 sillCol = vec3(0.012, 0.008, 0.014);
+         vec3 sillCol = vec3(0.010, 0.012, 0.010);
          col = mix(col, sillCol, sillMask * 0.85);
 
-         // Crisp 3-layer twinkling stars above the mountain skyline against pure AMOLED black
-         float skyMask = smoothstep(sillEdge - 0.01, sillEdge + 0.14, uv.y) * smoothstep(-0.08, 0.48, uv.y);
+         // Crisp 3-layer twinkling stars above the V-valley skyline against pure AMOLED black
+         float skyMask = smoothstep(sillEdge - 0.01, sillEdge + 0.14, uv.y) * smoothstep(-0.08, 0.30, uv.y);
          if (skyMask > 0.004) {
            vec2 starUv = vec2(uv.x * uAspect, uv.y);
            float s1 = starLayer(starUv, 26.0, 0.88, 165.0, 0.0, 0.0) * 0.56;
@@ -856,12 +864,12 @@
          float dep = z - uCamera.z;
 
          if (isHeart < 0.5 && isAura < 0.5) {
-           float nearBlur = (1.0 - smoothstep(1.4, 4.2, dep)) * 0.85;
-           float farBlur = smoothstep(26.0, 56.0, dep) * 0.88;
+           float nearBlur = (1.0 - smoothstep(1.0, 2.8, dep)) * 0.62;
+           float farBlur = smoothstep(32.0, 62.0, dep) * 0.72;
            defocus = max(max(nearBlur, farBlur), settle * (1.0 - blossom * 0.28) * 0.66);
             if (isPad < 0.5) {
               float nearAlpha = smoothstep(0.7, 1.85, dep);
-              float farHorizon = 1.0 - smoothstep(62.0, 74.5, dep);
+              float farHorizon = 1.0 - smoothstep(54.0, 66.0, dep);
               opacity *= nearAlpha * farHorizon * (1.0 - settle * mix(0.68, 0.52, blossom));
             }
           }
@@ -878,7 +886,7 @@
           p += push;
 
           gl_Position = vec4(p, dep * 1.0017 - 0.18, dep);
-          if (dep < 0.55 || dep > 76.0) {
+          if (dep < 0.55 || dep > 68.0) {
             gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
           }
 
@@ -886,11 +894,11 @@
           float flyShrink = 1.0 - fly * blossom * (1.0 - isHeart) * (1.0 - isAura) * 0.22;
           gl_PointSize = clamp(sizePx * flyShrink, 1.0, uLens.w);
 
-          float farFade = 1.0 - smoothstep(26.0, 74.0, dep) * 0.22;
-          float backLift = smoothstep(11.0, 36.0, dep) * mix(0.20, 0.10, blossom);
-          float hillTex = 0.90 + 0.20 * (0.5 + 0.5 * sin(x * 0.45 + z * 0.30) * cos(x * 0.28 - z * 0.38));
-          float bright = (0.28 + 0.68 * farFade + backLift) * lit * mix(0.84, 0.96, max(blossom, isHeart));
-          bright *= mix(1.0, hillTex, smoothstep(11.0, 22.0, dep));
+          float farFade = 1.0 - smoothstep(14.0, 56.0, dep) * mix(0.58, 0.28, max(blossom, isHeart));
+          float backLift = smoothstep(10.0, 32.0, dep) * mix(0.06, 0.12, blossom);
+          float hillTex = 0.88 + 0.24 * (0.5 + 0.5 * sin(x * 0.45 + z * 0.30) * cos(x * 0.28 - z * 0.38));
+          float bright = (0.30 + 0.70 * farFade + backLift) * lit * mix(0.76, 1.02, max(blossom, isHeart));
+          bright *= mix(1.0, hillTex, smoothstep(10.0, 20.0, dep));
           bright *= 1.0 + clos * 0.30 * max(blossom, isHeart);
           bright *= mix(1.0, 0.44, settle);
 
@@ -996,64 +1004,40 @@
     const quadBuf = makeBuffer(new Float32Array([-1, -1, 3, -1, -1, 3]));
 
     // ------------------------------------------------------------------------
-    // Full-Depth Dense Meadow + Non-Intersecting 3D Sakura Builder
+    // Siltora V-Shaped Valley + Non-Intersecting 3D Lotus Builder
     // ------------------------------------------------------------------------
     const SAKURA_X = 0.0;
     const SAKURA_Z = 8.5;
 
+    function valleyCourse(z) {
+      const t = Math.max(0, (z - 8.5) / 56.0);
+      return 1.55 * S(t * 2.8 + 0.30) * Math.min(1, t * 2.2) - 0.50 * S(t * 6.0) * Math.min(1, t * 1.8);
+    }
+
     function meadowFloor(x, z) {
-      const dx = x - SAKURA_X;
-      const dz = z - SAKURA_Z;
-      const r = Math.hypot(dx, dz);
-      const centerDip = -0.34 * Math.exp(-(r * r) / 7.5);
-      const deepHill = 0.064 * Math.max(0, z - 10.0) + 0.050 * Math.abs(dx);
-      const undulation = 0.36 * S(x * 0.42 + z * 0.24) + 0.22 * C(x * 0.85 - z * 0.36);
-      const nearDrop = z < 4.5 ? -0.18 * (4.5 - z) : 0;
-
-      const backT = Math.max(0, Math.min(1, (z - 13.0) / 15.0));
-      const backMask = backT * backT * (3 - 2 * backT);
-      const leftMidHill = 2.4 * Math.exp(-(((x + 10.5) * (x + 10.5)) / 48.0 + ((z - 21.5) * (z - 21.5)) / 40.0));
-      const rightMidHill = 2.5 * Math.exp(-(((x - 11.0) * (x - 11.0)) / 52.0 + ((z - 22.5) * (z - 22.5)) / 42.0));
-      const leftPeak = 5.6 * Math.exp(-(((x + 17.5) * (x + 17.5)) / 115.0 + ((z - 32.0) * (z - 32.0)) / 92.0));
-      const rightPeak = 6.2 * Math.exp(-(((x - 18.5) * (x - 18.5)) / 125.0 + ((z - 34.0) * (z - 34.0)) / 98.0));
-      const farLeft = 8.4 * Math.exp(-(((x + 32.0) * (x + 32.0)) / 230.0 + ((z - 47.0) * (z - 47.0)) / 115.0));
-      const farCenterLeft = 4.6 * Math.exp(-(((x + 14.5) * (x + 14.5)) / 105.0 + ((z - 46.5) * (z - 46.5)) / 98.0));
-      const farCenterRight = 5.0 * Math.exp(-(((x - 15.5) * (x - 15.5)) / 110.0 + ((z - 48.0) * (z - 48.0)) / 102.0));
-      const farRight = 8.8 * Math.exp(-(((x - 34.0) * (x - 34.0)) / 240.0 + ((z - 48.5) * (z - 48.5)) / 120.0));
-      const farValleyRidge = 2.6 * Math.exp(-(((x - 1.0) * (x - 1.0)) / 90.0 + ((z - 48.0) * (z - 48.0)) / 85.0));
-
-      // Towering high mountain range in deep background (z = 56..70)
-      const highLeft = 12.6 * Math.exp(-(((x + 41.0) * (x + 41.0)) / 360.0 + ((z - 61.5) * (z - 61.5)) / 175.0));
-      const highMidLeft = 7.4 * Math.exp(-(((x + 19.5) * (x + 19.5)) / 195.0 + ((z - 61.5) * (z - 61.5)) / 160.0));
-      const highCenterPass = 3.8 * Math.exp(-(((x - 0.5) * (x - 0.5)) / 170.0 + ((z - 63.0) * (z - 63.0)) / 145.0));
-      const highMidRight = 7.8 * Math.exp(-(((x - 20.5) * (x - 20.5)) / 205.0 + ((z - 61.5) * (z - 61.5)) / 165.0));
-      const highRight = 13.4 * Math.exp(-(((x - 43.0) * (x - 43.0)) / 380.0 + ((z - 62.5) * (z - 62.5)) / 180.0));
-      const mountains =
-        backMask *
-        (leftMidHill +
-          rightMidHill +
-          leftPeak +
-          rightPeak +
-          farLeft +
-          farCenterLeft +
-          farCenterRight +
-          farRight +
-          farValleyRidge +
-          highLeft +
-          highMidLeft +
-          highCenterPass +
-          highMidRight +
-          highRight);
-      return 0.46 + centerDip + deepHill + undulation + nearDrop + mountains;
+      const off = x - valleyCourse(z);
+      const w = Math.abs(off);
+      const asym = off < 0 ? 1.07 : 0.94;
+      const wall = w * (0.19 + 0.31 * Math.min(1.0, w / 7.2)) * asym;
+      const wave = (TAU * z) / 88.0;
+      const ridge = 0.11 * w * (S(wave * 5.0 + off * 0.31) + 0.63 * C(wave * 3.0 - off * 0.49));
+      const undul =
+        0.36 * S(off * 0.88 + wave * 4.0) +
+        0.18 * C(off * 1.62 - wave * 7.0) +
+        0.22 * S(wave * 4.0 + 0.3);
+      const lotusCradle = -0.36 * Math.exp(-(off * off + (z - SAKURA_Z) * (z - SAKURA_Z)) / 7.8);
+      const fgMound = 0.34 * Math.exp(-(off * off / 9.0 + ((z - 4.8) * (z - 4.8)) / 5.2));
+      const farRise = 0.014 * Math.max(0, z - 12.0);
+      return 0.38 + wall + ridge + undul + lotusCradle + fgMound + farRise;
     }
 
     function insideMeadowFrustum(x, z, allowRoot) {
-      if (z < 1.1 || z > 74.0) return false;
-      const maxX = (z + 2.2) * 1.22;
-      if (Math.abs(x) > maxX) return false;
+      if (z < 1.1 || z > 64.0) return false;
+      const maxX = Math.min(24.5, (z + 2.2) * 1.28);
+      if (Math.abs(x - valleyCourse(z)) > maxX) return false;
       const dx = x - SAKURA_X;
       const dz = z - SAKURA_Z;
-      const minR = allowRoot ? 0.45 : 2.1;
+      const minR = allowRoot ? 0.45 : 2.05;
       if (Math.hypot(dx, dz) < minR && z > 6.2 && z < 10.5) return false;
       return true;
     }
@@ -1064,8 +1048,8 @@
         { count: 7, ringNorm: 0.5, len: 3.32, maxW: 1.46, azOffset: 0.18 + Math.PI / 7, ringIdx: 1 },
         { count: 6, ringNorm: 1.0, len: 3.04, maxW: 1.24, azOffset: 0.18 + Math.PI / 3.5, ringIdx: 2 },
       ];
-      const U_SEGS = 18;
-      const V_SEGS = 20;
+      const U_SEGS = 24;
+      const V_SEGS = 24;
       const totalPetals = tiers.reduce((sum, t) => sum + t.count, 0);
       const vertsPerPetal = U_SEGS * V_SEGS * 6;
       const meshData = new Float32Array(totalPetals * vertsPerPetal * 8);
@@ -1144,7 +1128,7 @@
     let heightPx = 0;
     let avgGap = 32;
     let budgetAt = 0;
-    let budget = lowEnd ? 240000 : 480000;
+    let budget = lowEnd ? 1800000 : 6400000;
 
     let tClock = 0;
     let mx = 0;
@@ -1176,17 +1160,18 @@
     }
 
     async function buildScene() {
+      const bokehBlurPx = Math.max(6, Math.round(TILE_SIZE * 0.055));
       for (let i = 0; i < 32; i++) {
         const tileImg = makeAtlasTile(i);
-        const tx = (i % 8) * 128;
-        const ty = Math.floor(i / 8) * 128;
+        const tx = (i % 8) * TILE_SIZE;
+        const ty = Math.floor(i / 8) * TILE_SIZE;
         ac.drawImage(tileImg, tx, ty);
         ac.save();
         ac.beginPath();
-        ac.rect(tx, ty + 512, 128, 128);
+        ac.rect(tx, ty + ATLAS_SIZE / 2, TILE_SIZE, TILE_SIZE);
         ac.clip();
-        ac.filter = "blur(9px)";
-        ac.drawImage(tileImg, tx, ty + 512);
+        ac.filter = `blur(${bokehBlurPx}px)`;
+        ac.drawImage(tileImg, tx, ty + ATLAS_SIZE / 2);
         ac.restore();
         await yieldSlice();
       }
@@ -1201,128 +1186,104 @@
 
       sakuraMesh = buildSakuraMeshBuffer();
 
-      // 1. Dense frustum-packed grass carpet from close foreground (z=1.1) to distant high mountains (z=70.1)
-      const foliageCount = lowEnd ? 14000 : 22000;
+      // 1. Lush Dark-Green Siltora V-Valley Foliage Carpet + Foreground Mossy Mound
+      const foliageCount = lowEnd ? 26000 : 44000;
       for (let i = 0; i < foliageCount; i++) {
         if (!(i & 511)) await yieldSlice();
-        const z = 1.1 + Math.pow(R(), 1.12) * 69.0;
-        const maxX = (z + 2.2) * 1.20;
-        const x = (R() * 2 - 1) * maxX;
+        const z = 1.1 + Math.pow(R(), 1.15) * 60.9;
+        const side = R() < 0.5 ? -1 : 1;
+        const maxOff = Math.min(24.0, (z + 2.2) * 1.26);
+        const off = side * Math.pow(R(), 1.12) * maxOff;
+        const x = off + valleyCourse(z);
         if (!insideMeadowFrustum(x, z, true)) continue;
 
-        const y = meadowFloor(x, z) - 0.06 + R() * 0.14;
+        const y = meadowFloor(x, z) - 0.04 + R() * 0.16;
         const pSeed = R();
-        const patch = 0.5 + 0.5 * S(x * 0.8 + S(z * 0.45)) * C(z * 0.55 - x * 0.35);
-        const lit = 0.42 + 0.85 * Math.pow(patch, 1.45) + 0.22 * R();
-        const size = (0.40 + R() * 0.74) * (z > 16 ? 1.0 + (z - 16) * 0.025 : 1.0);
-        // Balance dense bushy grass mats (8..11) with textured foliage (0..7) below flower heads
-        const tile = R() < 0.45 ? 8 + Math.floor(R() * 4) : Math.floor(R() * 8);
-        const ang = Math.atan2(z - SAKURA_Z, x - SAKURA_X);
-        const r = Math.hypot(x - SAKURA_X, z - SAKURA_Z);
-        const liftWeight = 0.55 + R() * 0.75;
-        pushParticle(x, y, z, size, tile, pSeed, lit, 0.0, ang, r, liftWeight, 0.0);
-      }
-
-      // Dedicated background mountain grass carpet across all hillside and high peak ranges
-      const mountainGrassCount = lowEnd ? 9000 : 15500;
-      for (let i = 0; i < mountainGrassCount; i++) {
-        if (!(i & 511)) await yieldSlice();
-        const z = 13.5 + R() * 57.5;
-        const maxX = (z + 2.2) * 1.20;
-        const x = (R() * 2 - 1) * maxX;
-        if (!insideMeadowFrustum(x, z, true)) continue;
-
-        const y = meadowFloor(x, z) - 0.05 + R() * 0.16;
-        const pSeed = R();
-        const patch = 0.5 + 0.5 * S(x * 0.65 + S(z * 0.38)) * C(z * 0.48 - x * 0.32);
-        const lit = 0.56 + 0.62 * Math.pow(patch, 1.25) + 0.18 * R();
-        const size = (0.68 + R() * 1.05) * (1.0 + (z - 13.5) * 0.044);
-        const tile = R() < 0.55 ? 8 + Math.floor(R() * 4) : Math.floor(R() * 8);
+        const patch = 0.5 + 0.5 * S(off * 1.18 + S(z * 0.28) * 1.8) * C(z * 0.34 + off * 0.38);
+        const lit = 0.28 + 0.92 * Math.pow(patch, 1.65) + 0.22 * R();
+        const size = (0.42 + R() * 0.86) * (z > 14 ? 1.0 + (z - 14) * 0.028 : 1.0);
+        const tile = R() < 0.48 ? 8 + Math.floor(R() * 4) : Math.floor(R() * 8);
         const ang = Math.atan2(z - SAKURA_Z, x - SAKURA_X);
         const r = Math.hypot(x - SAKURA_X, z - SAKURA_Z);
         const liftWeight = 0.52 + R() * 0.72;
         pushParticle(x, y, z, size, tile, pSeed, lit, 0.0, ang, r, liftWeight, 0.0);
       }
 
-      // 2. Wildflower Beds across Foreground Bokeh, Midground, and High Mountain Ranges
+      // Dedicated lush foreground central mossy mound framing the lotus root
+      const moundCount = lowEnd ? 1100 : 1800;
+      for (let i = 0; i < moundCount; i++) {
+        if (!(i & 511)) await yieldSlice();
+        const z = 2.6 + R() * 5.0;
+        const off = (R() * 2 - 1) * 3.6;
+        const x = off + valleyCourse(z);
+        if (!insideMeadowFrustum(x, z, true)) continue;
+        const y = meadowFloor(x, z) + 0.02 + R() * 0.18;
+        const patch = 0.5 + 0.5 * S(off * 1.4) * C(z * 0.65);
+        const lit = 0.32 + 0.85 * Math.pow(patch, 1.45) + 0.20 * R();
+        const size = 0.46 + R() * 0.72;
+        const tile = R() < 0.52 ? 8 + Math.floor(R() * 4) : Math.floor(R() * 8);
+        const ang = Math.atan2(z - SAKURA_Z, x - SAKURA_X);
+        const r = Math.hypot(x - SAKURA_X, z - SAKURA_Z);
+        pushParticle(x, y, z, size, tile, R(), lit, 0.0, ang, r, 0.48 + R() * 0.55, 0.0);
+      }
+
+      // 2. Siltora-Style Cascading Diagonal Wildflower Streams (Pastel Pink + Scattered Pastel Blue)
       const beds = [];
-      const fgCount = lowEnd ? 28 : 44;
-      for (let b = 0; b < fgCount; b++) {
-        const z = 1.35 + R() * 4.35;
-        const maxX = (z + 2.0) * 1.05;
-        const bx = (R() * 2 - 1) * maxX;
-        if (!insideMeadowFrustum(bx, z, false)) continue;
-        beds.push([bx, z, Math.floor(R() * 8), 0.55 + R() * 0.65, 0.5 + R() * 0.9, 0.94]);
+      const streamDensity = lowEnd ? 0.65 : 1.0;
+
+      // Helper to lay organic serpentine flower ribbons winding down each steep canyon slope
+      function addValleyRibbon(zStart, zEnd, steps, offFn, sideSign, kChoices, wBase, dBase, litBoost) {
+        const count = Math.max(3, Math.round(steps * streamDensity));
+        for (let i = 0; i <= count; i++) {
+          const u = i / count;
+          const z = zStart + (zEnd - zStart) * u + (R() - 0.5) * 1.1;
+          const off = sideSign * offFn(u) + (R() - 0.5) * (0.45 + z * 0.04);
+          const bx = off + valleyCourse(z);
+          if (!insideMeadowFrustum(bx, z, false)) continue;
+          const distScale = z > 12 ? 1.0 + (z - 12) * 0.036 : 1.0;
+          const k = kChoices[Math.floor(R() * kChoices.length)];
+          beds.push([bx, z, k, wBase * distScale * (0.85 + R() * 0.35), dBase * distScale * (0.85 + R() * 0.35), litBoost]);
+        }
       }
 
-      const midCount = lowEnd ? 52 : 84;
-      for (let b = 0; b < midCount; b++) {
-        const z = 5.6 + R() * 10.2;
-        const maxX = (z + 2.0) * 1.05;
-        const bx = (R() * 2 - 1) * maxX;
-        if (!insideMeadowFrustum(bx, z, false)) continue;
-        beds.push([bx, z, Math.floor(R() * 8), 0.65 + R() * 0.85, 0.6 + R() * 1.2, 0.92]);
-      }
+      const leftPalette = [0, 1, 2, 3, 5, 6, 7];
+      const rightPalette = [0, 2, 4, 5, 1, 6, 7];
 
-      const bgCount = lowEnd ? 185 : 340;
-      for (let b = 0; b < bgCount; b++) {
-        const z = 13.5 + Math.pow(R(), 0.88) * 57.0;
-        const maxX = (z + 2.2) * 1.18;
-        const bx = (R() * 2 - 1) * maxX;
-        if (!insideMeadowFrustum(bx, z, false)) continue;
-        const distScale = 1.0 + (z - 13.5) * 0.042;
-        beds.push([bx, z, Math.floor(R() * 8), (0.85 + R() * 1.0) * distScale, (0.85 + R() * 1.25) * distScale, 0.96]);
-      }
+      // Left canyon wall main sweeping cascades (high far-left flowing into mid & lower left foreground)
+      addValleyRibbon(4.0, 48.0, 26, (u) => 2.6 + Math.pow(u, 0.92) * 17.5 + S(u * 5.2) * 1.2, -1, leftPalette, 0.92, 1.25, 0.95);
+      addValleyRibbon(9.0, 52.0, 20, (u) => 5.2 + Math.pow(u, 0.85) * 18.0 + C(u * 4.4) * 1.4, -1, [2, 3, 6, 0, 5], 0.96, 1.30, 0.96);
+      addValleyRibbon(2.2, 22.0, 14, (u) => 1.8 + u * 6.8 + S(u * 4.0) * 0.7, -1, [0, 1, 4, 6, 7], 0.84, 1.05, 0.94);
 
+      // Right canyon wall iconic S-curved cascade (high upper-right bending toward center-right mid-slope & foreground flank)
+      addValleyRibbon(4.0, 48.0, 28, (u) => 2.5 + Math.pow(u, 0.95) * 18.0 - S(u * 6.2 + 0.4) * 1.5, 1, rightPalette, 0.94, 1.28, 0.95);
+      addValleyRibbon(10.0, 52.0, 20, (u) => 5.4 + Math.pow(u, 0.86) * 18.2 + S(u * 4.8) * 1.3, 1, [4, 2, 7, 1, 5], 0.96, 1.32, 0.96);
+      addValleyRibbon(2.2, 24.0, 14, (u) => 2.0 + u * 7.2 - C(u * 3.8) * 0.7, 1, [1, 3, 6, 0, 7], 0.85, 1.08, 0.94);
+
+      // Foreground low curtain right in front of lotus (tucks bloom cleanly behind foreground beds) + flanking front bokeh
       beds.push(
-        [-2.8, 2.9, 2, 0.95, 0.85, 0.94],
-        [2.9, 3.0, 4, 0.95, 0.85, 0.94],
-        [-1.3, 2.3, 5, 0.8, 0.7, 0.94],
-        [1.4, 2.4, 1, 0.8, 0.7, 0.94],
-        [-3.8, 7.0, 2, 1.0, 1.1, 0.92],
-        [3.9, 7.1, 4, 1.0, 1.1, 0.92],
-        [-2.8, 12.2, 6, 1.1, 1.2, 0.95],
-        [2.8, 12.2, 7, 1.1, 1.2, 0.95],
-        [0.0, 14.5, 1, 1.3, 1.2, 0.96],
-        [-18.0, 24.0, 0, 2.1, 1.7, 0.96],
-        [-9.0, 25.0, 3, 2.0, 1.6, 0.96],
-        [9.0, 25.5, 5, 2.0, 1.6, 0.96],
-        [18.0, 25.0, 2, 2.1, 1.7, 0.96],
-        [-16.5, 31.0, 1, 2.2, 1.8, 0.98],
-        [-13.0, 27.0, 5, 1.9, 1.6, 0.96],
-        [-21.0, 33.0, 3, 2.2, 1.8, 0.98],
-        [17.5, 33.5, 2, 2.3, 1.9, 0.98],
-        [13.5, 28.5, 6, 1.9, 1.6, 0.96],
-        [22.0, 35.0, 0, 2.3, 1.8, 0.98],
-        [-10.5, 21.5, 4, 1.7, 1.5, 0.96],
-        [-7.5, 19.5, 7, 1.5, 1.4, 0.96],
-        [11.0, 22.5, 1, 1.7, 1.5, 0.96],
-        [8.0, 20.0, 5, 1.5, 1.4, 0.96],
-        [1.5, 39.0, 3, 2.2, 1.8, 0.98],
-        [-3.0, 35.0, 0, 2.0, 1.7, 0.98],
-        [-25.0, 38.0, 4, 2.6, 2.1, 0.98],
-        [25.0, 39.0, 7, 2.6, 2.1, 0.98],
-        [-32.0, 47.0, 1, 3.0, 2.6, 0.99],
-        [-23.0, 44.0, 5, 2.8, 2.4, 0.99],
-        [-14.5, 46.5, 3, 2.9, 2.4, 0.99],
-        [-6.0, 44.0, 7, 2.7, 2.2, 0.99],
-        [1.0, 48.0, 2, 2.8, 2.3, 0.99],
-        [8.0, 45.0, 4, 2.7, 2.2, 0.99],
-        [15.5, 48.0, 6, 2.9, 2.4, 0.99],
-        [25.0, 46.0, 0, 3.0, 2.5, 0.99],
-        [34.0, 48.5, 1, 3.2, 2.6, 0.99],
-        [-52.0, 58.0, 5, 4.0, 3.5, 1.00],
-        [-41.0, 61.5, 2, 4.2, 3.6, 1.00],
-        [-30.0, 59.5, 7, 3.8, 3.3, 1.00],
-        [-19.5, 61.5, 4, 3.8, 3.4, 1.00],
-        [-9.0, 60.5, 1, 3.5, 3.2, 1.00],
-        [0.5, 63.0, 3, 3.6, 3.2, 1.00],
-        [10.0, 61.0, 6, 3.5, 3.2, 1.00],
-        [20.5, 61.5, 0, 3.8, 3.4, 1.00],
-        [32.0, 60.0, 4, 3.9, 3.3, 1.00],
-        [43.0, 62.5, 2, 4.2, 3.6, 1.00],
-        [53.0, 66.0, 5, 4.1, 3.5, 1.00]
+        [-3.0, 2.8, 2, 0.95, 0.85, 0.94],
+        [3.1, 2.9, 4, 0.95, 0.85, 0.94],
+        [-1.3, 2.3, 5, 0.78, 0.68, 0.94],
+        [1.4, 2.4, 1, 0.78, 0.68, 0.94],
+        [-0.45, 3.6, 0, 0.70, 0.65, 0.92],
+        [0.50, 3.7, 6, 0.70, 0.65, 0.92],
+        [-3.9, 6.8, 2, 1.02, 1.15, 0.93],
+        [4.0, 6.9, 4, 1.02, 1.15, 0.93]
       );
+
+      // Midground valley pockets on slopes + sparse faint center canyon floor wisps
+      const pocketCount = lowEnd ? 70 : 120;
+      for (let b = 0; b < pocketCount; b++) {
+        const z = 5.0 + Math.pow(R(), 0.95) * 48.0;
+        const side = R() < 0.5 ? -1 : 1;
+        const maxOff = Math.min(23.5, (z + 2.2) * 1.22);
+        const minOff = z > 10.5 ? 2.2 : 1.2;
+        const off = side * (minOff + Math.pow(R(), 0.85) * Math.max(1.0, maxOff - minOff));
+        const bx = off + valleyCourse(z);
+        if (!insideMeadowFrustum(bx, z, false)) continue;
+        const distScale = z > 12 ? 1.0 + (z - 12) * 0.036 : 1.0;
+        beds.push([bx, z, Math.floor(R() * 8), (0.72 + R() * 0.78) * distScale, (0.78 + R() * 1.1) * distScale, 0.95]);
+      }
 
       for (let b = 0; b < beds.length; b++) {
         await yieldSlice();
@@ -1331,18 +1292,20 @@
         for (let f = 0; f < families; f++) {
           const a = R() * TAU;
           const rr = Math.sqrt(R());
-          const fx = bx + C(a) * rr * w * 1.25;
-          const fz = bz + S(a) * rr * d * 1.25;
+          const fx = bx + C(a) * rr * w * 1.18;
+          const fz = bz + S(a) * rr * d * 1.18;
+          const fOff = fx - valleyCourse(fz);
+          if (fz > 11.0 && Math.abs(fOff) < 1.35 && R() < 0.78) continue;
           if (!insideMeadowFrustum(fx, fz, false)) continue;
-          const baseFl = (0.25 + R() * 0.22) * (fz > 14 ? 1.0 + (fz - 14) * 0.050 : 1.0);
-          const lf = (0.88 + R() * 0.10) * litBoost;
+          const baseFl = (0.24 + R() * 0.21) * (fz > 14 ? 1.0 + (fz - 14) * 0.044 : 1.0);
+          const lf = (0.90 + R() * 0.12) * litBoost;
           const clusterCount = 3 + Math.floor(R() * 5);
-          const clusterSpread = 0.52 + (fz > 16 ? (fz - 16) * 0.025 : 0);
+          const clusterSpread = 0.48 + (fz > 16 ? (fz - 16) * 0.022 : 0);
           for (let i = 0; i < clusterCount; i++) {
             const xx = fx + (R() - 0.5) * clusterSpread;
             const zz = fz + (R() - 0.5) * clusterSpread;
-            const yy = meadowFloor(xx, zz) + 0.25 + R() * 0.24;
-            const kk = R() < 0.78 ? k : (R() < 0.75 ? 6 + Math.floor(R() * 2) : (k + 2) % 6);
+            const yy = meadowFloor(xx, zz) + 0.24 + R() * 0.22;
+            const kk = R() < 0.74 ? k : (R() < 0.65 ? 6 + Math.floor(R() * 2) : (k + 2) % 6);
             const tileId = 16 + kk + (R() < 0.5 ? 8 : 0);
             const ang = Math.atan2(zz - SAKURA_Z, xx - SAKURA_X);
             const r = Math.hypot(xx - SAKURA_X, zz - SAKURA_Z);
@@ -1350,14 +1313,14 @@
               xx,
               yy,
               zz,
-              baseFl * (0.58 + R() * 0.78),
+              baseFl * (0.58 + R() * 0.76),
               tileId,
               R(),
               lf * (0.94 + R() * 0.10),
               0.0,
               ang,
               r,
-              0.75 + R() * 0.85,
+              0.72 + R() * 0.80,
               1.0
             );
           }
@@ -1467,7 +1430,7 @@
       uImage: gl.getUniformLocation(pvProg, "uImage"),
     };
 
-    const maxPointSize = Math.min(gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE)[1], lowEnd ? 92 : 128);
+    const hwMaxPointSize = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE)[1] || 256;
 
     function wake() {
       if (!raf && !disposed && !document.hidden) {
@@ -1501,13 +1464,6 @@
       lastNow = now;
       avgGap = avgGap * 0.9 + Math.min(200, Math.max(8, gap)) * 0.1;
 
-      if (now - budgetAt > 1100) {
-        const hi = lowEnd ? 320000 : 620000;
-        if (avgGap > 44 && budget > 140000) budget = Math.max(140000, Math.round(budget * 0.78));
-        else if (avgGap < 34 && budget < hi) budget = Math.min(hi, Math.round(budget * 1.1));
-        budgetAt = now;
-      }
-
       const bloomRate = bloomTarget > bloomMix ? 2.1 : 0.78;
       const bloomEase = isReduced ? 1 : 1 - Math.exp(-dt * bloomRate);
       const fastEase = isReduced ? 1 : 1 - Math.exp(-dt * 5.0);
@@ -1536,8 +1492,23 @@
 
       const cw = Math.max(1, canvas.clientWidth);
       const ch = Math.max(1, canvas.clientHeight);
-      const maxDpr = lowEnd ? 1.0 : 1.15;
-      const dpr = Math.min(window.devicePixelRatio || 1, maxDpr, Math.sqrt(budget / (cw * ch)));
+      const maxDpr = lowEnd ? 1.75 : 2.0;
+      const targetDpr = Math.min(window.devicePixelRatio || 1, maxDpr);
+      const nativePixels = Math.round(cw * ch * targetDpr * targetDpr);
+      const hi = Math.max(lowEnd ? 1800000 : 4800000, Math.min(nativePixels, lowEnd ? 2600000 : 7500000));
+      const minBudget = Math.max(cw * ch, lowEnd ? 500000 : 1600000);
+
+      if (now - budgetAt > 1100) {
+        if (avgGap > 68 && budget > minBudget) {
+          budget = Math.max(minBudget, Math.round(budget * 0.82));
+        } else if (avgGap < 42 && budget < hi) {
+          budget = Math.min(hi, Math.round(budget * 1.15));
+        }
+        budgetAt = now;
+      }
+
+      const dpr = Math.min(targetDpr, Math.sqrt(budget / (cw * ch)));
+      const maxPointSize = Math.min(hwMaxPointSize, Math.round((lowEnd ? 120 : 175) * dpr));
       const W = Math.max(2, Math.round(cw * dpr));
       const H = Math.max(2, Math.round(ch * dpr));
 
@@ -1550,9 +1521,9 @@
       const aspect = widthPx / heightPx;
       const focal = aspect < 0.85 ? 1.18 : 1.72;
       const camX = ax * 0.18 + (isReduced ? 0 : 0.14 * S(tClock * 0.25));
-      const camY = 2.42 + (isReduced ? 0 : 0.05 * S(tClock * 0.34));
+      const camY = 2.58 + (isReduced ? 0 : 0.05 * S(tClock * 0.34));
       const camZ = -0.35;
-      const camPitch = -0.04;
+      const camPitch = -0.02;
 
       gl.disable(gl.DEPTH_TEST);
       gl.disable(gl.CULL_FACE);

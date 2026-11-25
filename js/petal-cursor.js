@@ -84,10 +84,11 @@
 
     sprites = darkPalette.map(buildPetalSprite);
 
-    const lowEnd =
-      (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) ||
-      window.innerWidth <= 820;
-    const maxDpr = lowEnd ? 1.0 : 1.5;
+    const isSmall =
+      window.innerWidth <= 820 ||
+      (window.matchMedia("(pointer: coarse)").matches &&
+        Math.min(window.innerWidth, window.innerHeight) <= 900);
+    const maxDpr = isSmall ? 1.5 : 2.0;
 
     let dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
     let viewW = window.innerWidth;
@@ -102,7 +103,7 @@
     }
     resize();
 
-    const MAX_PETALS = lowEnd ? 60 : 95;
+    const MAX_PETALS = isSmall ? 60 : 95;
     const petals = [];
     let raf = 0;
     let lastTime = 0;
