@@ -268,6 +268,7 @@ export function createGreetingController({
       item.el.style.setProperty("--cs", item.curS.toFixed(3));
       item.el.style.setProperty("--cr", `${item.curR.toFixed(2)}deg`);
       item.el.style.setProperty("--cg", item.curG.toFixed(3));
+      item.el.classList.toggle("is-lit", item.curG > 0.008);
     }
 
     if (maxDelta > 0.015) {
@@ -314,6 +315,7 @@ export function createGreetingController({
       item.el.style.setProperty("--cs", "1");
       item.el.style.setProperty("--cr", "0deg");
       item.el.style.setProperty("--cg", "0");
+      item.el.classList.remove("is-lit");
     }
   }
 

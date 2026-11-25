@@ -85,7 +85,7 @@ export function createPetalCursor(canvas, options) {
       window.innerWidth <= 820 ||
       (window.matchMedia("(pointer: coarse)").matches &&
         Math.min(window.innerWidth, window.innerHeight) <= 900);
-    const maxDpr = isSmall ? 1.5 : 2.0;
+    const maxDpr = 1.25;
 
     let dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
     let viewW = window.innerWidth;
@@ -100,7 +100,7 @@ export function createPetalCursor(canvas, options) {
     }
     resize();
 
-    const MAX_PETALS = isSmall ? 60 : 95;
+    const MAX_PETALS = isSmall ? 45 : 70;
     const petals = [];
     let raf = 0;
     let lastTime = 0;

@@ -47,8 +47,8 @@ window.PORTFOLIO_DATA = {
     subName: "(幸子福有)",
     tag: "@sachikofukuari",
     description: "be kind! 💖🌸 ",
-    banner: "assets/images/banner.jpg?v=13",
-    bannerWebp: "",
+    banner: "assets/images/banner.jpg?v=14",
+    bannerWebp: "assets/images/banner.webp?v=14",
     bannerCredit: "Art by Takeshima Eku",
     // Your Discord User ID (auto-syncs your current Discord profile picture)
     discordUserId: "732043268946133133",
