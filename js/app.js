@@ -13,7 +13,7 @@
   const introStage = document.getElementById("intro-stage");
   const introTrigger = document.getElementById("intro-bloom-trigger");
   const introGreeting = document.getElementById("intro-greeting");
-  const introCueText = document.getElementById("intro-cue-text");
+  const btnBackIntro = document.getElementById("btn-back-intro");
   const reducedMotionMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
   const portfolioShell = document.getElementById("portfolio-shell");
   const portfolioMain = document.getElementById("portfolio-view");
@@ -347,9 +347,6 @@
       })
     : null;
 
-  if (introCueText && DATA.intro?.cue) {
-    introCueText.textContent = DATA.intro.cue;
-  }
   if (introTrigger && DATA.intro?.lotusAriaLabel) {
     const greetPrefix = DATA.intro?.greeting ? `${DATA.intro.greeting} — ` : "";
     introTrigger.setAttribute("aria-label", `${greetPrefix}${DATA.intro.lotusAriaLabel}`);
@@ -1104,6 +1101,7 @@
   let returnWheelAccum = 0;
   let wheelResetTimer = 0;
   let touchStartY = null;
+  let touchStartScrollY = 0;
   let transitionLocked = false;
   let transitionUnlockTimer = 0;
 
@@ -1131,6 +1129,8 @@
     portfolioShell.inert = false;
     portfolioShell.removeAttribute("aria-hidden");
     introStage.setAttribute("aria-hidden", "true");
+    btnBackIntro?.removeAttribute("aria-hidden");
+    btnBackIntro?.removeAttribute("tabindex");
 
     renderActiveView();
     updateNavState();
@@ -1150,6 +1150,8 @@
     portfolioShell.inert = true;
     portfolioShell.setAttribute("aria-hidden", "true");
     introStage.removeAttribute("aria-hidden");
+    btnBackIntro?.setAttribute("aria-hidden", "true");
+    btnBackIntro?.setAttribute("tabindex", "-1");
     window.scrollTo({ top: 0, behavior: "instant" });
 
     lotusScene?.setBloom(false);
@@ -1161,6 +1163,7 @@
   }
 
   introTrigger?.addEventListener("click", openPortfolio);
+  btnBackIntro?.addEventListener("click", closeToIntro);
 
   window.addEventListener(
     "wheel",
@@ -1189,6 +1192,7 @@
     "touchstart",
     (e) => {
       touchStartY = e.touches[0]?.clientY ?? null;
+      touchStartScrollY = window.scrollY;
     },
     { passive: true }
   );
@@ -1201,19 +1205,34 @@
       if (currentY == null) return;
       const dy = touchStartY - currentY;
 
-      if (stage === "intro" && dy > 36) {
-        touchStartY = null;
-        openPortfolio();
-      } else if (stage === "open" && window.scrollY <= 1 && dy < -95) {
-        touchStartY = null;
-        closeToIntro();
+      if (stage === "intro") {
+        e.preventDefault();
+        if (dy > 32) {
+          touchStartY = null;
+          openPortfolio();
+        }
+      } else if (stage === "open" && touchStartScrollY <= 1 && window.scrollY <= 1 && dy < -6) {
+        // Claim the downward pull at top of page before mobile pull-to-refresh triggers
+        e.preventDefault();
+        if (dy < -62) {
+          touchStartY = null;
+          closeToIntro();
+        }
       }
+    },
+    { passive: false }
+  );
+
+  window.addEventListener(
+    "touchend",
+    () => {
+      touchStartY = null;
     },
     { passive: true }
   );
 
   window.addEventListener(
-    "touchend",
+    "touchcancel",
     () => {
       touchStartY = null;
     },

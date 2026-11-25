@@ -24,6 +24,13 @@
   <!-- Soft dark vignette framing viewport borders -->
   <div class="page-vignette" aria-hidden="true"></div>
 
+  <!-- Top-left back button (visible on open inner page) -->
+  <button id="btn-back-intro" class="back-intro-btn" type="button" aria-label="Back to lotus intro" title="Back to intro" aria-hidden="true" tabindex="-1">
+    <svg class="util-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M15 18l-6-6 6-6"/>
+    </svg>
+  </button>
+
   <!-- Persistent top-right display controls -->
   <div class="utility-dock" role="toolbar" aria-label="Display controls">
     <button id="btn-motion-toggle" class="util-pill" type="button" aria-label="Pause motion">
@@ -43,9 +50,6 @@
     <button id="intro-bloom-trigger" class="intro-hitarea" type="button" aria-label="Hello, im Ari — Bloom lotus to enter portfolio">
       <span class="intro-copy">
         <span id="intro-greeting" class="intro-greeting" aria-label="Hello, im Ari">Hello, im Ari</span>
-        <span class="bloom-cue">
-          <span id="intro-cue-text">Scroll or click to bloom</span>
-        </span>
       </span>
     </button>
   </div>
