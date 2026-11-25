@@ -533,6 +533,12 @@
   // --------------------------------------------------------------------------
 
   const greetingChars = [];
+  const greetingLineEls = [];
+  const greetingWriteState = {
+    rafId: 0,
+    fontReady: false,
+    startedOnce: false,
+  };
   const greetingState = {
     active: false,
     px: 0,
@@ -547,37 +553,160 @@
     lastTs: 0,
   };
 
-  function buildGreetingChars(text) {
+  function getGreetingLinesForConfig(introObj) {
+    const rawLines = loc(introObj, "greetingLines", null);
+    if (Array.isArray(rawLines) && rawLines.length > 0) {
+      return rawLines.map((l) => String(l));
+    }
+    const text = String(loc(introObj, "greeting", "Hello, im Ari"));
+    const commaIdx = text.indexOf(",");
+    if (commaIdx !== -1 && commaIdx < text.length - 2) {
+      return [text.slice(0, commaIdx + 1).trim(), text.slice(commaIdx + 1).trim()];
+    }
+    return [text];
+  }
+
+  function buildGreetingChars(textOrLines) {
     if (!introGreeting) return;
-    const str = String(text ?? "Hello, im Ari");
-    introGreeting.setAttribute("aria-label", str);
+    let lines;
+    if (Array.isArray(textOrLines)) {
+      lines = textOrLines.map((l) => String(l));
+    } else {
+      const str = String(textOrLines ?? "Hello, im Ari");
+      const commaIdx = str.indexOf(",");
+      lines =
+        commaIdx !== -1 && commaIdx < str.length - 2
+          ? [str.slice(0, commaIdx + 1).trim(), str.slice(commaIdx + 1).trim()]
+          : [str];
+    }
+
+    introGreeting.setAttribute("aria-label", lines.join(" "));
     introGreeting.textContent = "";
     greetingChars.length = 0;
+    greetingLineEls.length = 0;
 
-    for (const ch of str) {
-      if (/\s/.test(ch)) {
-        const sp = document.createElement("span");
-        sp.className = "greeting-space";
-        sp.setAttribute("aria-hidden", "true");
-        sp.innerHTML = "&nbsp;";
-        introGreeting.appendChild(sp);
-      } else {
-        const span = document.createElement("span");
-        span.className = "greeting-char";
-        span.setAttribute("aria-hidden", "true");
-        span.textContent = ch;
-        introGreeting.appendChild(span);
-        greetingChars.push({
-          el: span,
-          cx: 0,
-          cy: 0,
-          curX: 0,
-          curY: 0,
-          curS: 1,
-          curR: 0,
-        });
+    for (const lineStr of lines) {
+      const lineEl = document.createElement("span");
+      lineEl.className = "greeting-line";
+      lineEl.setAttribute("aria-hidden", "true");
+
+      for (const ch of lineStr) {
+        if (/\s/.test(ch)) {
+          const sp = document.createElement("span");
+          sp.className = "greeting-space";
+          sp.setAttribute("aria-hidden", "true");
+          sp.innerHTML = "&nbsp;";
+          lineEl.appendChild(sp);
+        } else {
+          const span = document.createElement("span");
+          span.className = "greeting-char";
+          span.setAttribute("aria-hidden", "true");
+          span.textContent = ch;
+          lineEl.appendChild(span);
+          greetingChars.push({
+            el: span,
+            cx: 0,
+            cy: 0,
+            curX: 0,
+            curY: 0,
+            curS: 1,
+            curR: 0,
+          });
+        }
       }
+      introGreeting.appendChild(lineEl);
+      greetingLineEls.push(lineEl);
     }
+  }
+
+  function clearGreetingWriteMasks() {
+    if (greetingWriteState.rafId) {
+      cancelAnimationFrame(greetingWriteState.rafId);
+      greetingWriteState.rafId = 0;
+    }
+    if (!introGreeting) return;
+    introGreeting.classList.remove("is-writing");
+    introGreeting.style.webkitMaskImage = "";
+    introGreeting.style.maskImage = "";
+    introGreeting.style.setProperty("--wx", "0px");
+    for (const lineEl of greetingLineEls) {
+      lineEl.style.webkitMaskImage = "";
+      lineEl.style.maskImage = "";
+      lineEl.style.setProperty("--wx", "0px");
+    }
+  }
+
+  function applyWriteFrameToEl(el, progress, padX) {
+    if (!el) return;
+    const p = Math.max(0, Math.min(1, progress));
+    if (p <= 0.001) {
+      el.style.webkitMaskImage = "linear-gradient(90deg, transparent 0%, transparent 100%)";
+      el.style.maskImage = "linear-gradient(90deg, transparent 0%, transparent 100%)";
+      el.style.setProperty("--wx", "0px");
+      return;
+    }
+    const e = 1 - Math.pow(1 - p, 2.5);
+    const totalW = Math.max(padX * 2 + 20, el.offsetWidth);
+    const innerW = Math.max(1, totalW - padX * 2);
+    // Start writing horizontally at center (x = 0) and push written glyphs left as newer ink flows right
+    const tx = ((1 - e) * innerW * 0.5).toFixed(2);
+    const feather = Math.min(34, innerW * 0.14);
+    const head = padX + e * (innerW + feather);
+    const solid = Math.max(0, head - feather);
+    const mask = `linear-gradient(90deg, #000 0px, #000 ${solid.toFixed(1)}px, transparent ${head.toFixed(1)}px)`;
+    el.style.webkitMaskImage = mask;
+    el.style.maskImage = mask;
+    el.style.setProperty("--wx", `${tx}px`);
+  }
+
+  function playGreetingWriteAnimation() {
+    if (!introGreeting) return;
+    clearGreetingWriteMasks();
+
+    if (motionPaused || reducedMotionMQ.matches || document.hidden || bodyEl.dataset.pageInactive === "true" || stage !== "intro") {
+      requestAnimationFrame(measureGreetingChars);
+      return;
+    }
+
+    const stacked = window.innerWidth <= 720 && greetingLineEls.length > 1;
+    const totalDur = 920; // <= 1.0 second Apple-style center-outward cursive sweep
+    let startTs = 0;
+    introGreeting.classList.add("is-writing");
+
+    if (stacked) {
+      applyWriteFrameToEl(greetingLineEls[0], 0, 28);
+      applyWriteFrameToEl(greetingLineEls[1], 0, 28);
+    } else {
+      applyWriteFrameToEl(introGreeting, 0, 32);
+    }
+
+    const step = (now) => {
+      if (stage !== "intro" || motionPaused || reducedMotionMQ.matches || document.hidden || bodyEl.dataset.pageInactive === "true") {
+        clearGreetingWriteMasks();
+        measureGreetingChars();
+        return;
+      }
+      if (!startTs) startTs = now;
+      const elapsed = now - startTs;
+
+      if (stacked) {
+        const p1 = Math.min(1, elapsed / 440);
+        const p2 = Math.max(0, Math.min(1, (elapsed - 390) / (totalDur - 390)));
+        applyWriteFrameToEl(greetingLineEls[0], p1, 28);
+        applyWriteFrameToEl(greetingLineEls[1], p2, 28);
+      } else {
+        applyWriteFrameToEl(introGreeting, Math.min(1, elapsed / totalDur), 32);
+      }
+
+      if (elapsed < totalDur) {
+        greetingWriteState.rafId = requestAnimationFrame(step);
+      } else {
+        clearGreetingWriteMasks();
+        measureGreetingChars();
+      }
+    };
+
+    greetingWriteState.rafId = requestAnimationFrame(step);
   }
 
   function measureGreetingChars() {
@@ -749,12 +878,31 @@
   window.addEventListener("pageshow", () => setPageInactive(false));
 
   if (introGreeting) {
-    buildGreetingChars(loc(DATA.intro, "greeting", "Hello, im Ari"));
-    measureGreetingChars();
-    document.fonts?.ready?.then(() => {
+    buildGreetingChars(getGreetingLinesForConfig(DATA.intro));
+    if (!motionPaused && !reducedMotionMQ.matches) {
+      if (window.innerWidth <= 720 && greetingLineEls.length > 1) {
+        applyWriteFrameToEl(greetingLineEls[0], 0, 28);
+        applyWriteFrameToEl(greetingLineEls[1], 0, 28);
+      } else {
+        applyWriteFrameToEl(introGreeting, 0, 32);
+      }
+    }
+    const runInitialWrite = () => {
+      if (greetingWriteState.startedOnce) return;
+      greetingWriteState.startedOnce = true;
+      greetingWriteState.fontReady = true;
+      playGreetingWriteAnimation();
+    };
+    if (document.fonts?.ready) {
+      document.fonts.ready.then(runInitialWrite);
+      setTimeout(runInitialWrite, 450);
+    } else {
+      runInitialWrite();
+    }
+    window.addEventListener("resize", () => {
+      clearGreetingWriteMasks();
       measureGreetingChars();
-    });
-    window.addEventListener("resize", measureGreetingChars, { passive: true });
+    }, { passive: true });
     window.addEventListener(
       "pointermove",
       (e) => {
@@ -831,8 +979,15 @@
 
     const greet = loc(DATA.intro, "greeting", "Hello, im Ari");
     if (introGreeting) {
-      buildGreetingChars(greet);
-      requestAnimationFrame(measureGreetingChars);
+      buildGreetingChars(getGreetingLinesForConfig(DATA.intro));
+      if (rerenderOpen) {
+        if (stage === "intro") {
+          playGreetingWriteAnimation();
+        } else {
+          clearGreetingWriteMasks();
+          requestAnimationFrame(measureGreetingChars);
+        }
+      }
     }
     if (introCueEl) {
       introCueEl.textContent = loc(DATA.intro, "cue", "scroll or click");
@@ -2299,6 +2454,7 @@
   function openPortfolio() {
     if (stage === "open" || transitionLocked) return;
     lotusScene?.setBloom(true);
+    clearGreetingWriteMasks();
     lockTransition(2100);
     stage = "open";
     bodyEl.dataset.stage = "open";
@@ -2345,7 +2501,7 @@
     resetPortfolioScroll();
 
     lotusScene?.setBloom(false);
-    requestAnimationFrame(() => measureGreetingChars());
+    playGreetingWriteAnimation();
 
     setTimeout(() => {
       if (stage === "intro") introTrigger?.focus({ preventScroll: true });

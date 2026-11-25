@@ -470,8 +470,11 @@ body[data-stage="open"] .intro-stage {
   display: inline-flex;
   align-items: baseline;
   justify-content: center;
+  gap: 0.28em;
   flex-wrap: nowrap;
   white-space: pre;
+  padding: 26px 32px;
+  margin: -26px -32px;
   font-family: var(--font-cursive);
   font-size: clamp(42px, 7.2vw, 90px);
   font-weight: 700;
@@ -482,7 +485,20 @@ body[data-stage="open"] .intro-stage {
     0 0 6px rgba(255, 206, 236, 0.72),
     0 0 16px rgba(255, 114, 188, 0.54),
     0 0 32px rgba(255, 68, 162, 0.32);
-  transform: translate3d(var(--gx, 0px), var(--gy, 0px), 0) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transform: translate3d(calc(var(--gx, 0px) + var(--wx, 0px)), var(--gy, 0px), 0) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+}
+
+.greeting-line {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  white-space: pre;
+  transform: translate3d(var(--wx, 0px), 0, 0);
+}
+
+.intro-greeting.is-writing,
+.intro-greeting.is-writing .greeting-line {
+  will-change: transform, opacity;
 }
 
 .greeting-char {
@@ -2395,7 +2411,22 @@ body[data-stage="open"] .bottom-nav-btn[aria-current="page"] .nav-pill-bg {
 
 @media (max-width: 720px) {
   .intro-hitarea {
-    padding-top: clamp(104px, 14.5vh, 148px);
+    padding-top: clamp(78px, 11vh, 118px);
+  }
+
+  .intro-greeting {
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 0;
+    margin: 0;
+    font-size: clamp(34px, 10.5vw, 52px);
+    line-height: 1.08;
+  }
+
+  .greeting-line {
+    padding: 22px 28px;
+    margin: -22px -28px;
   }
 }
 

@@ -26,10 +26,12 @@ window.PORTFOLIO_DATA = {
   // 1. LANDING / INTRO SCREEN
   intro: {
     greeting: "Hello, im Ari",
+    greetingLines: ["Hello,", "im Ari"],
     cue: "scroll or click",
     lotusAriaLabel: "Bloom lotus to enter portfolio",
     vi: {
       greeting: "Xin chào, mình là Ari",
+      greetingLines: ["Xin chào,", "mình là Ari"],
       cue: "cuộn hoặc nhấn",
       lotusAriaLabel: "Nở hoa sen để vào trang cá nhân",
     },
@@ -45,14 +47,13 @@ window.PORTFOLIO_DATA = {
     subName: "(幸子福有)",
     tag: "@sachikofukuari",
     description: "be kind! 💖🌸 ",
-    banner: "assets/images/banner.jpg?v=7",
+    banner: "assets/images/banner.jpg?v=8",
     bannerCredit: "Art by Takeshima Eku",
     // Your Discord User ID (auto-syncs your current Discord profile picture)
     discordUserId: "732043268946133133",
     avatarFallback: "https://cdn.discordapp.com/avatars/732043268946133133/c232585fd1847e1c3666537a61429aa1.webp?size=256",
     contactButtonLabel: "contact",
     vi: {
-      description: "hãy luôn tử tế nhé! 💖🌸 ",
       bannerCredit: "Tranh bởi Takeshima Eku",
       contactButtonLabel: "liên hệ",
     },
