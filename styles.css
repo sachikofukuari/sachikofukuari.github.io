@@ -184,6 +184,10 @@ body[data-stage="open"] .lotus-canvas {
     transform 0.95s cubic-bezier(0.22, 1, 0.36, 1) 0.55s;
 }
 
+body[data-transitioning="true"] .lotus-canvas {
+  will-change: filter, transform;
+}
+
 .page-vignette {
   position: fixed;
   inset: 0;
@@ -385,6 +389,9 @@ body[data-stage="open"] .intro-stage {
 .greeting-char {
   display: inline-block;
   transform: translate3d(var(--cx, 0px), var(--cy, 0px), 0) scale(var(--cs, 1)) rotate(var(--cr, 0deg));
+}
+
+.intro-greeting.is-interacting .greeting-char {
   filter: brightness(calc(1 + var(--cg, 0) * 0.34)) drop-shadow(0 0 calc(var(--cg, 0) * 18px) rgba(255, 112, 190, 0.95));
   will-change: transform, filter;
 }
@@ -425,13 +432,19 @@ body[data-stage="open"] .intro-stage {
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  :root:not([data-motion="paused"]) .intro-greeting {
+  :root:not([data-motion="paused"]) body[data-stage="intro"]:not([data-page-inactive="true"]) .intro-greeting {
     animation: greeting-bloom 3.6s ease-in-out infinite;
   }
 
-  :root:not([data-motion="paused"]) .bloom-cue {
+  :root:not([data-motion="paused"]) body[data-stage="intro"]:not([data-page-inactive="true"]) .bloom-cue {
     animation: cue-bloom-glow 3.4s ease-in-out infinite;
   }
+}
+
+body[data-page-inactive="true"] *,
+body[data-page-inactive="true"] *::before,
+body[data-page-inactive="true"] *::after {
+  animation-play-state: paused !important;
 }
 
 @keyframes greeting-bloom {

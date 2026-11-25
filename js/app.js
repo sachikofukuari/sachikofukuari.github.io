@@ -508,22 +508,75 @@
     }
 
     if (maxDelta > 0.015) {
+      introGreeting.classList.add("is-interacting");
       greetingState.rafId = requestAnimationFrame(stepGreetingFrame);
     } else {
+      introGreeting.classList.remove("is-interacting");
       greetingState.lastTs = 0;
     }
   }
 
   function wakeGreetingFrame() {
-    if (!greetingState.rafId) {
+    if (!greetingState.rafId && !document.hidden && bodyEl.dataset.pageInactive !== "true") {
       greetingState.rafId = requestAnimationFrame(stepGreetingFrame);
+    }
+  }
+
+  function resetGreetingCharsImmediate() {
+    if (greetingState.rafId) {
+      cancelAnimationFrame(greetingState.rafId);
+      greetingState.rafId = 0;
+    }
+    greetingState.lastTs = 0;
+    greetingState.active = false;
+    greetingState.curGx = 0;
+    greetingState.curGy = 0;
+    greetingState.curRx = 0;
+    greetingState.curRy = 0;
+    if (!introGreeting) return;
+    introGreeting.classList.remove("is-interacting");
+    introGreeting.style.setProperty("--gx", "0px");
+    introGreeting.style.setProperty("--gy", "0px");
+    introGreeting.style.setProperty("--rx", "0deg");
+    introGreeting.style.setProperty("--ry", "0deg");
+    for (let i = 0; i < greetingChars.length; i++) {
+      const item = greetingChars[i];
+      item.curX = 0;
+      item.curY = 0;
+      item.curS = 1;
+      item.curR = 0;
+      item.curG = 0;
+      item.el.style.setProperty("--cx", "0px");
+      item.el.style.setProperty("--cy", "0px");
+      item.el.style.setProperty("--cs", "1");
+      item.el.style.setProperty("--cr", "0deg");
+      item.el.style.setProperty("--cg", "0");
     }
   }
 
   function resetGreetingMotion() {
     greetingState.active = false;
-    wakeGreetingFrame();
+    if (document.hidden || bodyEl.dataset.pageInactive === "true") {
+      resetGreetingCharsImmediate();
+    } else {
+      wakeGreetingFrame();
+    }
   }
+
+  function setPageInactive(inactive) {
+    if (inactive) {
+      bodyEl.dataset.pageInactive = "true";
+      resetGreetingCharsImmediate();
+    } else if (!document.hidden) {
+      delete bodyEl.dataset.pageInactive;
+    }
+  }
+
+  document.addEventListener("visibilitychange", () => setPageInactive(document.hidden));
+  window.addEventListener("blur", () => setPageInactive(true));
+  window.addEventListener("focus", () => setPageInactive(false));
+  window.addEventListener("pagehide", () => setPageInactive(true));
+  window.addEventListener("pageshow", () => setPageInactive(false));
 
   if (introGreeting) {
     buildGreetingChars(DATA.intro?.greeting ?? "Hello, im Ari");
@@ -536,6 +589,10 @@
       "pointermove",
       (e) => {
         if (e.pointerType === "touch" || stage !== "intro" || motionPaused || reducedMotionMQ.matches) return;
+        if (bodyEl.dataset.pageInactive === "true" && !document.hidden) {
+          delete bodyEl.dataset.pageInactive;
+        }
+        if (document.hidden) return;
         greetingState.px = e.clientX;
         greetingState.py = e.clientY;
         greetingState.active = true;
@@ -544,7 +601,6 @@
       { passive: true }
     );
     window.addEventListener("pointerleave", resetGreetingMotion, { passive: true });
-    window.addEventListener("blur", resetGreetingMotion);
     reducedMotionMQ.addEventListener("change", resetGreetingMotion);
   }
 
@@ -1067,6 +1123,7 @@
 
   function openPortfolio() {
     if (stage === "open" || transitionLocked) return;
+    lotusScene?.setBloom(true);
     lockTransition(2100);
     stage = "open";
     bodyEl.dataset.stage = "open";
@@ -1078,7 +1135,6 @@
     renderActiveView();
     updateNavState();
     resetGreetingMotion();
-    lotusScene?.setBloom(true);
 
     setTimeout(() => {
       if (stage === "open") focusViewHeading();

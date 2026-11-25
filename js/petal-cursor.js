@@ -107,6 +107,8 @@
     const petals = [];
     let raf = 0;
     let lastTime = 0;
+    let windowBlurred = false;
+    let prevDirty = null;
 
     let hasPointer = false;
     let lastSpawnX = 0;
@@ -114,6 +116,10 @@
     let smoothX = 0;
     let smoothY = 0;
     let lastMoveTime = 0;
+
+    function isBackgrounded() {
+      return document.hidden || windowBlurred;
+    }
 
     function spawnPetal(x, y, vx, vy, burst) {
       if (petals.length >= MAX_PETALS) {
@@ -140,20 +146,21 @@
     }
 
     function wake() {
-      if (!raf && !disposed && !paused && !reducedMQ.matches && !document.hidden && petals.length > 0) {
-        lastTime = performance.now();
+      if (!raf && !disposed && !paused && !reducedMQ.matches && !isBackgrounded() && petals.length > 0) {
+        lastTime = 0;
         raf = requestAnimationFrame(tick);
       }
     }
 
     function clearCanvas() {
+      prevDirty = null;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
 
     function tick(now) {
       raf = 0;
-      if (disposed || paused || reducedMQ.matches || document.hidden) {
+      if (disposed || paused || reducedMQ.matches || isBackgrounded()) {
         if (reducedMQ.matches || paused) {
           petals.length = 0;
           clearCanvas();
@@ -161,14 +168,23 @@
         return;
       }
 
-      const dt = Math.min(0.05, Math.max(0.001, (now - lastTime) * 0.001));
+      const dt = lastTime ? Math.min(0.05, Math.max(0.001, (now - lastTime) * 0.001)) : 0.016;
       lastTime = now;
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, viewW, viewH);
+      if (prevDirty) {
+        ctx.clearRect(prevDirty.x, prevDirty.y, prevDirty.w, prevDirty.h);
+      } else {
+        ctx.clearRect(0, 0, viewW, viewH);
+      }
 
       const dampVx = Math.exp(-dt * 2.4);
       const dampVy = 1 - Math.exp(-dt * 2.2);
+      let minX = viewW;
+      let minY = viewH;
+      let maxX = 0;
+      let maxY = 0;
+      let drewAny = false;
 
       for (let i = petals.length - 1; i >= 0; i--) {
         const p = petals[i];
@@ -200,6 +216,13 @@
         const sinA = Math.sin(p.angle);
         const spr = sprites[p.spriteIdx];
         const drawSize = SPRITE_SIZE * p.size;
+        const halfExtent = drawSize * 0.75 + 2;
+
+        if (p.x - halfExtent < minX) minX = p.x - halfExtent;
+        if (p.y - halfExtent < minY) minY = p.y - halfExtent;
+        if (p.x + halfExtent > maxX) maxX = p.x + halfExtent;
+        if (p.y + halfExtent > maxY) maxY = p.y + halfExtent;
+        drewAny = true;
 
         ctx.globalAlpha = alpha;
         ctx.setTransform(
@@ -213,6 +236,17 @@
         ctx.drawImage(spr, -drawSize * 0.5, -drawSize * 0.5, drawSize, drawSize);
       }
       ctx.globalAlpha = 1;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      if (drewAny) {
+        const cx = Math.max(0, Math.floor(minX));
+        const cy = Math.max(0, Math.floor(minY));
+        const cw = Math.min(viewW - cx, Math.ceil(maxX) - cx);
+        const ch = Math.min(viewH - cy, Math.ceil(maxY) - cy);
+        prevDirty = cw > 0 && ch > 0 ? { x: cx, y: cy, w: cw, h: ch } : null;
+      } else {
+        prevDirty = null;
+      }
 
       if (petals.length > 0) {
         raf = requestAnimationFrame(tick);
@@ -223,6 +257,11 @@
 
     function onPointerMove(e) {
       if (e.pointerType === "touch" || paused || reducedMQ.matches) return;
+      if (windowBlurred && !document.hidden) {
+        windowBlurred = false;
+        wake();
+      }
+      if (document.hidden) return;
       const now = performance.now();
       const x = e.clientX;
       const y = e.clientY;
@@ -290,13 +329,43 @@
       wake();
     }
 
+    function suspendCursor() {
+      cancelAnimationFrame(raf);
+      raf = 0;
+      lastTime = 0;
+    }
+
     function onVisibilityChange() {
       if (document.hidden) {
-        cancelAnimationFrame(raf);
-        raf = 0;
+        suspendCursor();
       } else {
+        windowBlurred = false;
         wake();
       }
+    }
+
+    function onWindowBlur() {
+      windowBlurred = true;
+      suspendCursor();
+    }
+
+    function onWindowFocus() {
+      windowBlurred = false;
+      if (!document.hidden) wake();
+    }
+
+    function onPageHide() {
+      suspendCursor();
+    }
+
+    function onPageShow() {
+      windowBlurred = false;
+      if (!document.hidden) wake();
+    }
+
+    function onResize() {
+      prevDirty = null;
+      resize();
     }
 
     function onMotionChange() {
@@ -308,7 +377,11 @@
 
     window.addEventListener("pointermove", onPointerMove, { passive: true });
     window.addEventListener("pointerdown", onPointerDown, { passive: true });
-    window.addEventListener("resize", resize, { passive: true });
+    window.addEventListener("resize", onResize, { passive: true });
+    window.addEventListener("blur", onWindowBlur);
+    window.addEventListener("focus", onWindowFocus);
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("pageshow", onPageShow);
     document.addEventListener("visibilitychange", onVisibilityChange);
     reducedMQ.addEventListener("change", onMotionChange);
 
@@ -317,8 +390,7 @@
       setPaused(nextPaused) {
         paused = !!nextPaused;
         if (paused) {
-          cancelAnimationFrame(raf);
-          raf = 0;
+          suspendCursor();
           petals.length = 0;
           clearCanvas();
         } else {
@@ -330,7 +402,11 @@
         cancelAnimationFrame(raf);
         window.removeEventListener("pointermove", onPointerMove);
         window.removeEventListener("pointerdown", onPointerDown);
-        window.removeEventListener("resize", resize);
+        window.removeEventListener("resize", onResize);
+        window.removeEventListener("blur", onWindowBlur);
+        window.removeEventListener("focus", onWindowFocus);
+        window.removeEventListener("pagehide", onPageHide);
+        window.removeEventListener("pageshow", onPageShow);
         document.removeEventListener("visibilitychange", onVisibilityChange);
         reducedMQ.removeEventListener("change", onMotionChange);
       },

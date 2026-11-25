@@ -497,9 +497,6 @@
        varying vec2 uv;
        uniform float uTime;
        uniform float uAspect;
-       uniform vec2 uWhite0;
-       uniform vec2 uWhite1;
-       uniform vec2 uWhite2;
 
        float hash21(vec2 p) {
          p = fract(p * vec2(123.34, 456.21));
@@ -769,7 +766,7 @@
 
        varying vec4 vBot;
        varying vec4 vColor;
-       varying float vRot;
+       varying vec2 vRotCS;
        varying vec2 vDepthFx;
 
        void main() {
@@ -909,7 +906,7 @@
 
           vBot = vec4(tile, clamp(defocus, 0.0, 1.0), seed, max(blossom * (1.0 - dust), isHeart));
           vColor = vec4(bright, scatterGlow, dust, clamp(opacity, 0.0, 1.0));
-          vRot = spriteRot;
+          vRotCS = vec2(cos(spriteRot), sin(spriteRot));
           vDepthFx = vec2(
             smoothstep(42.0, 74.0, dep) * 0.18,
             smoothstep(11.0, 44.0, dep)
@@ -919,7 +916,7 @@
        uniform sampler2D uImage;
        varying vec4 vBot;
        varying vec4 vColor;
-       varying float vRot;
+       varying vec2 vRotCS;
        varying vec2 vDepthFx;
 
        void main() {
@@ -950,9 +947,7 @@
            return;
          }
 
-         float c = cos(vRot);
-         float s = sin(vRot);
-         vec2 uv = mat2(c, -s, s, c) * q + 0.5;
+         vec2 uv = mat2(vRotCS.x, -vRotCS.y, vRotCS.y, vRotCS.x) * q + 0.5;
          if (any(lessThan(uv, vec2(0.003))) || any(greaterThan(uv, vec2(0.997)))) discard;
 
          vec2 loc = (vec2(mod(vBot.x, 8.0), floor(vBot.x / 8.0)) + uv) / 8.0;
@@ -1001,6 +996,13 @@
       return b;
     }
 
+    function makeElementBuffer(data) {
+      const b = gl.createBuffer();
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, b);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, data, gl.STATIC_DRAW);
+      return b;
+    }
+
     const quadBuf = makeBuffer(new Float32Array([-1, -1, 3, -1, -1, 3]));
 
     // ------------------------------------------------------------------------
@@ -1033,7 +1035,7 @@
 
     function insideMeadowFrustum(x, z, allowRoot) {
       if (z < 1.1 || z > 64.0) return false;
-      const maxX = Math.min(24.5, (z + 2.2) * 1.28);
+      const maxX = Math.min(23.5, (z + 1.8) * 1.18);
       if (Math.abs(x - valleyCourse(z)) > maxX) return false;
       const dx = x - SAKURA_X;
       const dz = z - SAKURA_Z;
@@ -1050,20 +1052,26 @@
       ];
       const U_SEGS = 24;
       const V_SEGS = 24;
+      const uCols = U_SEGS + 1;
+      const vRows = V_SEGS + 1;
       const totalPetals = tiers.reduce((sum, t) => sum + t.count, 0);
-      const vertsPerPetal = U_SEGS * V_SEGS * 6;
+      const vertsPerPetal = uCols * vRows;
+      const indicesPerPetal = U_SEGS * V_SEGS * 6;
       const meshData = new Float32Array(totalPetals * vertsPerPetal * 8);
-      let cursor = 0;
+      const indexData = new Uint16Array(totalPetals * indicesPerPetal);
+      let vCursor = 0;
+      let iCursor = 0;
+      let vertOffset = 0;
 
       function pushVert(u, v, ringNorm, az, len, maxW, pSeed, ringIdx) {
-        meshData[cursor++] = u;
-        meshData[cursor++] = v;
-        meshData[cursor++] = ringNorm;
-        meshData[cursor++] = az;
-        meshData[cursor++] = len;
-        meshData[cursor++] = maxW;
-        meshData[cursor++] = pSeed;
-        meshData[cursor++] = ringIdx;
+        meshData[vCursor++] = u;
+        meshData[vCursor++] = v;
+        meshData[vCursor++] = ringNorm;
+        meshData[vCursor++] = az;
+        meshData[vCursor++] = len;
+        meshData[vCursor++] = maxW;
+        meshData[vCursor++] = pSeed;
+        meshData[vCursor++] = ringIdx;
       }
 
       for (const tier of tiers) {
@@ -1073,28 +1081,38 @@
           const len = tier.len * (0.98 + R() * 0.04);
           const maxW = tier.maxW * (0.98 + R() * 0.04);
 
-          for (let iu = 0; iu < U_SEGS; iu++) {
-            const u0 = iu / U_SEGS;
-            const u1 = (iu + 1) / U_SEGS;
-            for (let iv = 0; iv < V_SEGS; iv++) {
-              const v0 = (iv / V_SEGS) * 2 - 1;
-              const v1 = ((iv + 1) / V_SEGS) * 2 - 1;
-
-              pushVert(u0, v0, tier.ringNorm, az, len, maxW, pSeed, tier.ringIdx);
-              pushVert(u1, v0, tier.ringNorm, az, len, maxW, pSeed, tier.ringIdx);
-              pushVert(u1, v1, tier.ringNorm, az, len, maxW, pSeed, tier.ringIdx);
-
-              pushVert(u0, v0, tier.ringNorm, az, len, maxW, pSeed, tier.ringIdx);
-              pushVert(u1, v1, tier.ringNorm, az, len, maxW, pSeed, tier.ringIdx);
-              pushVert(u0, v1, tier.ringNorm, az, len, maxW, pSeed, tier.ringIdx);
+          for (let iu = 0; iu <= U_SEGS; iu++) {
+            const u = iu / U_SEGS;
+            for (let iv = 0; iv <= V_SEGS; iv++) {
+              const v = (iv / V_SEGS) * 2 - 1;
+              pushVert(u, v, tier.ringNorm, az, len, maxW, pSeed, tier.ringIdx);
             }
           }
+
+          for (let iu = 0; iu < U_SEGS; iu++) {
+            for (let iv = 0; iv < V_SEGS; iv++) {
+              const i00 = vertOffset + iu * vRows + iv;
+              const i10 = vertOffset + (iu + 1) * vRows + iv;
+              const i01 = i00 + 1;
+              const i11 = i10 + 1;
+
+              indexData[iCursor++] = i00;
+              indexData[iCursor++] = i10;
+              indexData[iCursor++] = i11;
+
+              indexData[iCursor++] = i00;
+              indexData[iCursor++] = i11;
+              indexData[iCursor++] = i01;
+            }
+          }
+          vertOffset += vertsPerPetal;
         }
       }
 
       return {
         buffer: makeBuffer(meshData),
-        vertexCount: totalPetals * vertsPerPetal,
+        indexBuffer: makeElementBuffer(indexData),
+        indexCount: totalPetals * indicesPerPetal,
       };
     }
 
@@ -1137,27 +1155,10 @@
     let ay = 0;
     let mouseTarget = 0;
     let mouseSmooth = 0;
-
-    const whiteWalk = [
-      { x: -0.35, y: 0.25, tx: 0.4, ty: -0.1, speed: 0.075 },
-      { x: 0.45, y: -0.2, tx: -0.25, ty: 0.35, speed: 0.06 },
-      { x: 0.0, y: 0.4, tx: 0.2, ty: 0.15, speed: 0.05 },
-    ];
-
-    function stepWhiteClouds(dt) {
-      for (const w of whiteWalk) {
-        const dx = w.tx - w.x;
-        const dy = w.ty - w.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist < 0.08) {
-          w.tx = (Math.random() - 0.5) * 1.45;
-          w.ty = (Math.random() - 0.5) * 1.15;
-        } else {
-          w.x += (dx / dist) * w.speed * dt;
-          w.y += (dy / dist) * w.speed * dt;
-        }
-      }
-    }
+    let lastPointerMoveMs = 0;
+    let windowBlurred = false;
+    let pendingFlyDown = false;
+    let hasPaintedOnce = false;
 
     async function buildScene() {
       const bokehBlurPx = Math.max(6, Math.round(TILE_SIZE * 0.055));
@@ -1187,12 +1188,12 @@
       sakuraMesh = buildSakuraMeshBuffer();
 
       // 1. Lush Dark-Green Siltora V-Valley Foliage Carpet + Foreground Mossy Mound
-      const foliageCount = lowEnd ? 26000 : 44000;
+      const foliageCount = lowEnd ? 16500 : 26000;
       for (let i = 0; i < foliageCount; i++) {
         if (!(i & 511)) await yieldSlice();
         const z = 1.1 + Math.pow(R(), 1.15) * 60.9;
         const side = R() < 0.5 ? -1 : 1;
-        const maxOff = Math.min(24.0, (z + 2.2) * 1.26);
+        const maxOff = Math.min(23.5, (z + 1.8) * 1.18);
         const off = side * Math.pow(R(), 1.12) * maxOff;
         const x = off + valleyCourse(z);
         if (!insideMeadowFrustum(x, z, true)) continue;
@@ -1201,8 +1202,9 @@
         const pSeed = R();
         const patch = 0.5 + 0.5 * S(off * 1.18 + S(z * 0.28) * 1.8) * C(z * 0.34 + off * 0.38);
         const lit = 0.28 + 0.92 * Math.pow(patch, 1.65) + 0.22 * R();
-        const size = (0.42 + R() * 0.86) * (z > 14 ? 1.0 + (z - 14) * 0.028 : 1.0);
-        const tile = R() < 0.48 ? 8 + Math.floor(R() * 4) : Math.floor(R() * 8);
+        const depthMul = z < 2.4 ? 0.84 : z > 14 ? 1.0 + (z - 14) * 0.030 : 1.0;
+        const size = (0.48 + R() * 0.92) * depthMul;
+        const tile = R() < 0.54 ? 8 + Math.floor(R() * 4) : Math.floor(R() * 8);
         const ang = Math.atan2(z - SAKURA_Z, x - SAKURA_X);
         const r = Math.hypot(x - SAKURA_X, z - SAKURA_Z);
         const liftWeight = 0.52 + R() * 0.72;
@@ -1210,7 +1212,7 @@
       }
 
       // Dedicated lush foreground central mossy mound framing the lotus root
-      const moundCount = lowEnd ? 1100 : 1800;
+      const moundCount = lowEnd ? 850 : 1300;
       for (let i = 0; i < moundCount; i++) {
         if (!(i & 511)) await yieldSlice();
         const z = 2.6 + R() * 5.0;
@@ -1220,20 +1222,20 @@
         const y = meadowFloor(x, z) + 0.02 + R() * 0.18;
         const patch = 0.5 + 0.5 * S(off * 1.4) * C(z * 0.65);
         const lit = 0.32 + 0.85 * Math.pow(patch, 1.45) + 0.20 * R();
-        const size = 0.46 + R() * 0.72;
-        const tile = R() < 0.52 ? 8 + Math.floor(R() * 4) : Math.floor(R() * 8);
+        const size = 0.50 + R() * 0.78;
+        const tile = R() < 0.56 ? 8 + Math.floor(R() * 4) : Math.floor(R() * 8);
         const ang = Math.atan2(z - SAKURA_Z, x - SAKURA_X);
         const r = Math.hypot(x - SAKURA_X, z - SAKURA_Z);
         pushParticle(x, y, z, size, tile, R(), lit, 0.0, ang, r, 0.48 + R() * 0.55, 0.0);
       }
 
-      // 2. Siltora-Style Cascading Diagonal Wildflower Streams (Pastel Pink + Scattered Pastel Blue)
+      // 2. Siltora-Style Cascading Diagonal Wildflower Streams (Abundant Pastel Pink + Scattered Pastel Blue)
       const beds = [];
-      const streamDensity = lowEnd ? 0.65 : 1.0;
+      const streamDensity = lowEnd ? 0.68 : 1.0;
 
       // Helper to lay organic serpentine flower ribbons winding down each steep canyon slope
       function addValleyRibbon(zStart, zEnd, steps, offFn, sideSign, kChoices, wBase, dBase, litBoost) {
-        const count = Math.max(3, Math.round(steps * streamDensity));
+        const count = Math.max(4, Math.round(steps * streamDensity));
         for (let i = 0; i <= count; i++) {
           const u = i / count;
           const z = zStart + (zEnd - zStart) * u + (R() - 0.5) * 1.1;
@@ -1249,53 +1251,61 @@
       const leftPalette = [0, 1, 2, 3, 5, 6, 7];
       const rightPalette = [0, 2, 4, 5, 1, 6, 7];
 
-      // Left canyon wall main sweeping cascades (high far-left flowing into mid & lower left foreground)
-      addValleyRibbon(4.0, 48.0, 26, (u) => 2.6 + Math.pow(u, 0.92) * 17.5 + S(u * 5.2) * 1.2, -1, leftPalette, 0.92, 1.25, 0.95);
-      addValleyRibbon(9.0, 52.0, 20, (u) => 5.2 + Math.pow(u, 0.85) * 18.0 + C(u * 4.4) * 1.4, -1, [2, 3, 6, 0, 5], 0.96, 1.30, 0.96);
-      addValleyRibbon(2.2, 22.0, 14, (u) => 1.8 + u * 6.8 + S(u * 4.0) * 0.7, -1, [0, 1, 4, 6, 7], 0.84, 1.05, 0.94);
+      // Left canyon wall sweeping cascades (4 serpentine streams across upper, mid, and lower slopes)
+      addValleyRibbon(3.6, 48.0, 32, (u) => 2.5 + Math.pow(u, 0.92) * 17.5 + S(u * 5.2) * 1.2, -1, leftPalette, 0.94, 1.26, 0.95);
+      addValleyRibbon(8.5, 52.0, 26, (u) => 5.0 + Math.pow(u, 0.85) * 18.0 + C(u * 4.4) * 1.4, -1, [2, 3, 6, 0, 5], 0.98, 1.32, 0.96);
+      addValleyRibbon(2.0, 24.0, 18, (u) => 1.7 + u * 7.2 + S(u * 4.0) * 0.7, -1, [0, 1, 4, 6, 7], 0.86, 1.08, 0.94);
+      addValleyRibbon(14.0, 44.0, 16, (u) => 8.2 + u * 12.2 - S(u * 3.8 + 0.5) * 1.1, -1, [1, 5, 6, 2, 7], 0.92, 1.22, 0.96);
 
-      // Right canyon wall iconic S-curved cascade (high upper-right bending toward center-right mid-slope & foreground flank)
-      addValleyRibbon(4.0, 48.0, 28, (u) => 2.5 + Math.pow(u, 0.95) * 18.0 - S(u * 6.2 + 0.4) * 1.5, 1, rightPalette, 0.94, 1.28, 0.95);
-      addValleyRibbon(10.0, 52.0, 20, (u) => 5.4 + Math.pow(u, 0.86) * 18.2 + S(u * 4.8) * 1.3, 1, [4, 2, 7, 1, 5], 0.96, 1.32, 0.96);
-      addValleyRibbon(2.2, 24.0, 14, (u) => 2.0 + u * 7.2 - C(u * 3.8) * 0.7, 1, [1, 3, 6, 0, 7], 0.85, 1.08, 0.94);
+      // Right canyon wall iconic S-curved cascades (4 sweeping streams winding into lower-right bank)
+      addValleyRibbon(3.6, 48.0, 34, (u) => 2.4 + Math.pow(u, 0.95) * 18.0 - S(u * 6.2 + 0.4) * 1.5, 1, rightPalette, 0.96, 1.30, 0.95);
+      addValleyRibbon(9.0, 52.0, 26, (u) => 5.2 + Math.pow(u, 0.86) * 18.2 + S(u * 4.8) * 1.3, 1, [4, 2, 7, 1, 5], 0.98, 1.34, 0.96);
+      addValleyRibbon(2.0, 25.0, 18, (u) => 1.9 + u * 7.4 - C(u * 3.8) * 0.7, 1, [1, 3, 6, 0, 7], 0.88, 1.10, 0.94);
+      addValleyRibbon(14.0, 44.0, 16, (u) => 8.5 + u * 12.0 + C(u * 3.6 + 0.3) * 1.2, 1, [0, 4, 7, 3, 6], 0.92, 1.22, 0.96);
 
-      // Foreground low curtain right in front of lotus (tucks bloom cleanly behind foreground beds) + flanking front bokeh
+      // Foreground low curtain right in front of lotus (tucks bloom cleanly behind foreground beds) + rich flanking front beds
       beds.push(
-        [-3.0, 2.8, 2, 0.95, 0.85, 0.94],
-        [3.1, 2.9, 4, 0.95, 0.85, 0.94],
-        [-1.3, 2.3, 5, 0.78, 0.68, 0.94],
-        [1.4, 2.4, 1, 0.78, 0.68, 0.94],
-        [-0.45, 3.6, 0, 0.70, 0.65, 0.92],
-        [0.50, 3.7, 6, 0.70, 0.65, 0.92],
-        [-3.9, 6.8, 2, 1.02, 1.15, 0.93],
-        [4.0, 6.9, 4, 1.02, 1.15, 0.93]
+        [-3.0, 2.8, 2, 0.98, 0.88, 0.94],
+        [3.1, 2.9, 4, 0.98, 0.88, 0.94],
+        [-1.3, 2.3, 5, 0.82, 0.72, 0.94],
+        [1.4, 2.4, 1, 0.82, 0.72, 0.94],
+        [-0.45, 3.6, 0, 0.74, 0.68, 0.92],
+        [0.50, 3.7, 6, 0.74, 0.68, 0.92],
+        [-2.2, 4.4, 6, 0.90, 0.85, 0.94],
+        [2.3, 4.5, 2, 0.90, 0.85, 0.94],
+        [-3.9, 6.8, 2, 1.05, 1.18, 0.93],
+        [4.0, 6.9, 4, 1.05, 1.18, 0.93],
+        [-1.6, 5.4, 3, 0.76, 0.72, 0.93],
+        [1.7, 5.5, 7, 0.76, 0.72, 0.93],
+        [-4.6, 4.0, 1, 1.02, 0.95, 0.95],
+        [4.8, 4.2, 5, 1.02, 0.95, 0.95]
       );
 
       // Midground valley pockets on slopes + sparse faint center canyon floor wisps
-      const pocketCount = lowEnd ? 70 : 120;
+      const pocketCount = lowEnd ? 105 : 175;
       for (let b = 0; b < pocketCount; b++) {
-        const z = 5.0 + Math.pow(R(), 0.95) * 48.0;
+        const z = 4.4 + Math.pow(R(), 0.94) * 48.6;
         const side = R() < 0.5 ? -1 : 1;
-        const maxOff = Math.min(23.5, (z + 2.2) * 1.22);
-        const minOff = z > 10.5 ? 2.2 : 1.2;
-        const off = side * (minOff + Math.pow(R(), 0.85) * Math.max(1.0, maxOff - minOff));
+        const maxOff = Math.min(23.0, (z + 1.8) * 1.16);
+        const minOff = z > 10.5 ? 2.0 : 1.15;
+        const off = side * (minOff + Math.pow(R(), 0.84) * Math.max(1.0, maxOff - minOff));
         const bx = off + valleyCourse(z);
         if (!insideMeadowFrustum(bx, z, false)) continue;
         const distScale = z > 12 ? 1.0 + (z - 12) * 0.036 : 1.0;
-        beds.push([bx, z, Math.floor(R() * 8), (0.72 + R() * 0.78) * distScale, (0.78 + R() * 1.1) * distScale, 0.95]);
+        beds.push([bx, z, Math.floor(R() * 8), (0.74 + R() * 0.82) * distScale, (0.80 + R() * 1.12) * distScale, 0.95]);
       }
 
       for (let b = 0; b < beds.length; b++) {
         await yieldSlice();
         const [bx, bz, k, w, d, litBoost] = beds[b];
-        const families = Math.min(34, Math.round(w * d * 7 + 5));
+        const families = Math.min(38, Math.round(w * d * 7.5 + 6));
         for (let f = 0; f < families; f++) {
           const a = R() * TAU;
           const rr = Math.sqrt(R());
           const fx = bx + C(a) * rr * w * 1.18;
           const fz = bz + S(a) * rr * d * 1.18;
           const fOff = fx - valleyCourse(fz);
-          if (fz > 11.0 && Math.abs(fOff) < 1.35 && R() < 0.78) continue;
+          if (fz > 11.5 && Math.abs(fOff) < 1.25 && R() < 0.80) continue;
           if (!insideMeadowFrustum(fx, fz, false)) continue;
           const baseFl = (0.24 + R() * 0.21) * (fz > 14 ? 1.0 + (fz - 14) * 0.044 : 1.0);
           const lf = (0.90 + R() * 0.12) * litBoost;
@@ -1398,9 +1408,6 @@
     const bgUniforms = {
       uTime: gl.getUniformLocation(bgProg, "uTime"),
       uAspect: gl.getUniformLocation(bgProg, "uAspect"),
-      uWhite0: gl.getUniformLocation(bgProg, "uWhite0"),
-      uWhite1: gl.getUniformLocation(bgProg, "uWhite1"),
-      uWhite2: gl.getUniformLocation(bgProg, "uWhite2"),
     };
 
     const smAttrs = {
@@ -1432,10 +1439,40 @@
 
     const hwMaxPointSize = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE)[1] || 256;
 
+    function isBackgrounded() {
+      return document.hidden || windowBlurred;
+    }
+
     function wake() {
-      if (!raf && !disposed && !document.hidden) {
-        raf = requestAnimationFrame(renderFrame);
+      if (!raf && !disposed && !isBackgrounded()) {
+        if (!paused || !hasPaintedOnce) {
+          raf = requestAnimationFrame(renderFrame);
+        }
       }
+    }
+
+    function suspendScene() {
+      if (raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
+      lastNow = 0;
+      if (flyDownTimer) {
+        clearTimeout(flyDownTimer);
+        flyDownTimer = 0;
+        pendingFlyDown = true;
+      }
+    }
+
+    function resumeScene() {
+      if (disposed || paused || isBackgrounded()) return;
+      if (pendingFlyDown && bloomTarget === 1) {
+        pendingFlyDown = false;
+        flyTarget = 0.24;
+        settleTarget = 1;
+      }
+      lastNow = 0;
+      wake();
     }
 
     function drawPointSlice(start, count) {
@@ -1446,23 +1483,27 @@
     function renderFrame(now) {
       raf = 0;
       if (disposed || !canvas.isConnected || !particleBuf || !atlasTex || !sakuraMesh) return;
+      if (isBackgrounded() && hasPaintedOnce) return;
 
       const isReduced = reducedMotionMQ.matches;
       const animating =
-        Math.abs(bloomTarget - bloomMix) > 0.005 ||
-        Math.abs(flyTarget - flyMix) > 0.005 ||
-        Math.abs(settleTarget - settleMix) > 0.005;
+        Math.abs(bloomTarget - bloomMix) > 0.004 ||
+        Math.abs(flyTarget - flyMix) > 0.004 ||
+        Math.abs(settleTarget - settleMix) > 0.004;
 
-      const gap = now - (lastNow || now - 33);
-      const minGap = animating ? 16 : 31;
-      if (!paused && !isReduced && gap < minGap) {
+      const pointerActive = now - lastPointerMoveMs < 550;
+      const settledOpen = !animating && settleMix > 0.985 && bloomTarget === 1;
+      const minGap = animating ? 0 : settledOpen ? 60 : pointerActive ? 14 : 33;
+
+      const gap = now - (lastNow || now - 16);
+      if (hasPaintedOnce && !paused && !isReduced && minGap > 0 && gap < minGap) {
         wake();
         return;
       }
 
       const dt = Math.min(0.08, Math.max(0.001, gap * 0.001));
       lastNow = now;
-      avgGap = avgGap * 0.9 + Math.min(200, Math.max(8, gap)) * 0.1;
+      hasPaintedOnce = true;
 
       const bloomRate = bloomTarget > bloomMix ? 2.1 : 0.78;
       const bloomEase = isReduced ? 1 : 1 - Math.exp(-dt * bloomRate);
@@ -1474,7 +1515,6 @@
       if (!paused) {
         if (!isReduced) {
           tClock += dt;
-          stepWhiteClouds(dt);
         }
         bloomMix += (bloomTarget - bloomMix) * bloomEase;
         if (!isReduced && bloomTarget < bloomMix) {
@@ -1490,6 +1530,10 @@
         mouseSmooth += (mouseTarget - mouseSmooth) * fastEase;
       }
 
+      if (minGap <= 33) {
+        avgGap = avgGap * 0.9 + Math.min(200, Math.max(8, gap)) * 0.1;
+      }
+
       const cw = Math.max(1, canvas.clientWidth);
       const ch = Math.max(1, canvas.clientHeight);
       const maxDpr = lowEnd ? 1.75 : 2.0;
@@ -1499,16 +1543,18 @@
       const minBudget = Math.max(cw * ch, lowEnd ? 500000 : 1600000);
 
       if (now - budgetAt > 1100) {
-        if (avgGap > 68 && budget > minBudget) {
+        const downThreshold = Math.max(68, minGap + 36);
+        const upThreshold = Math.max(42, minGap + 12);
+        if (avgGap > downThreshold && budget > minBudget) {
           budget = Math.max(minBudget, Math.round(budget * 0.82));
-        } else if (avgGap < 42 && budget < hi) {
+        } else if (avgGap < upThreshold && budget < hi) {
           budget = Math.min(hi, Math.round(budget * 1.15));
         }
         budgetAt = now;
       }
 
       const dpr = Math.min(targetDpr, Math.sqrt(budget / (cw * ch)));
-      const maxPointSize = Math.min(hwMaxPointSize, Math.round((lowEnd ? 120 : 175) * dpr));
+      const maxPointSize = Math.min(hwMaxPointSize, Math.round((lowEnd ? 105 : 138) * dpr));
       const W = Math.max(2, Math.round(cw * dpr));
       const H = Math.max(2, Math.round(ch * dpr));
 
@@ -1529,16 +1575,13 @@
       gl.disable(gl.CULL_FACE);
       gl.disable(gl.BLEND);
 
-      // 1. Pink starry sky gradient + wandering slight-white glow + mountain sill
+      // 1. Starry AMOLED dark sky + V-valley silhouette
       gl.useProgram(bgProg);
       gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
       gl.enableVertexAttribArray(bgPosLoc);
       gl.vertexAttribPointer(bgPosLoc, 2, gl.FLOAT, false, 0, 0);
       gl.uniform1f(bgUniforms.uTime, tClock);
       gl.uniform1f(bgUniforms.uAspect, aspect);
-      gl.uniform2f(bgUniforms.uWhite0, whiteWalk[0].x, whiteWalk[0].y);
-      gl.uniform2f(bgUniforms.uWhite1, whiteWalk[1].x, whiteWalk[1].y);
-      gl.uniform2f(bgUniforms.uWhite2, whiteWalk[2].x, whiteWalk[2].y);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       gl.disableVertexAttribArray(bgPosLoc);
 
@@ -1581,6 +1624,7 @@
       gl.depthMask(settleMix < 0.35);
       gl.useProgram(sakuraMeshProg);
       gl.bindBuffer(gl.ARRAY_BUFFER, sakuraMesh.buffer);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, sakuraMesh.indexBuffer);
       gl.enableVertexAttribArray(smAttrs.aPetalUV);
       gl.vertexAttribPointer(smAttrs.aPetalUV, 4, gl.FLOAT, false, 32, 0);
       gl.enableVertexAttribArray(smAttrs.aPetalDim);
@@ -1593,7 +1637,7 @@
       gl.uniform2f(smUniforms.uAim, ax, ay);
       gl.uniform1f(smUniforms.uSettle, settleMix);
 
-      gl.drawArrays(gl.TRIANGLES, 0, sakuraMesh.vertexCount);
+      gl.drawElements(gl.TRIANGLES, sakuraMesh.indexCount, gl.UNSIGNED_SHORT, 0);
 
       gl.disableVertexAttribArray(smAttrs.aPetalUV);
       gl.disableVertexAttribArray(smAttrs.aPetalDim);
@@ -1622,17 +1666,22 @@
         Math.abs(flyTarget - flyMix) > 0.002 ||
         Math.abs(settleTarget - settleMix) > 0.002;
 
-      if (!paused && !document.hidden && (!isReduced || settling)) {
+      if (!paused && !isBackgrounded() && (!isReduced || settling)) {
         wake();
       }
     }
 
     function onPointerMove(e) {
       if (e.pointerType === "touch") return;
+      if (windowBlurred && !document.hidden) {
+        windowBlurred = false;
+        resumeScene();
+      }
       const rect = canvas.getBoundingClientRect();
       mx = ((e.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
       my = 1 - ((e.clientY - rect.top) / Math.max(1, rect.height)) * 2;
       mouseTarget = 1;
+      lastPointerMoveMs = performance.now();
       wake();
     }
 
@@ -1643,7 +1692,31 @@
     }
 
     function onVisibilityChange() {
-      if (!document.hidden && !paused) wake();
+      if (document.hidden) {
+        suspendScene();
+      } else {
+        windowBlurred = false;
+        resumeScene();
+      }
+    }
+
+    function onWindowBlur() {
+      windowBlurred = true;
+      suspendScene();
+    }
+
+    function onWindowFocus() {
+      windowBlurred = false;
+      if (!document.hidden) resumeScene();
+    }
+
+    function onPageHide() {
+      suspendScene();
+    }
+
+    function onPageShow() {
+      windowBlurred = false;
+      if (!document.hidden) resumeScene();
     }
 
     function onContextLost(e) {
@@ -1654,6 +1727,10 @@
 
     window.addEventListener("pointermove", onPointerMove, { passive: true });
     window.addEventListener("pointerleave", onPointerLeave, { passive: true });
+    window.addEventListener("blur", onWindowBlur);
+    window.addEventListener("focus", onWindowFocus);
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("pageshow", onPageShow);
     document.addEventListener("visibilitychange", onVisibilityChange);
     canvas.addEventListener("webglcontextlost", onContextLost);
     reducedMotionMQ.addEventListener("change", wake);
@@ -1670,10 +1747,13 @@
     return {
       setBloom(open) {
         clearTimeout(flyDownTimer);
+        flyDownTimer = 0;
+        pendingFlyDown = false;
         if (open) {
           bloomTarget = 1;
           flyTarget = 1.05;
           flyDownTimer = setTimeout(() => {
+            flyDownTimer = 0;
             if (!disposed && bloomTarget === 1) {
               flyTarget = 0.24;
               settleTarget = 1;
@@ -1692,7 +1772,11 @@
       setTheme() {},
       setPaused(nextPaused) {
         paused = !!nextPaused;
-        if (!paused) wake();
+        if (paused) {
+          suspendScene();
+        } else {
+          resumeScene();
+        }
       },
       pulseScatter() {},
       destroy() {
@@ -1702,6 +1786,10 @@
         ro.disconnect();
         window.removeEventListener("pointermove", onPointerMove);
         window.removeEventListener("pointerleave", onPointerLeave);
+        window.removeEventListener("blur", onWindowBlur);
+        window.removeEventListener("focus", onWindowFocus);
+        window.removeEventListener("pagehide", onPageHide);
+        window.removeEventListener("pageshow", onPageShow);
         document.removeEventListener("visibilitychange", onVisibilityChange);
         canvas.removeEventListener("webglcontextlost", onContextLost);
         reducedMotionMQ.removeEventListener("change", wake);
