@@ -1006,14 +1006,10 @@ export function createLotusScene(canvas, options) {
           float finalPtSize = sizePx * flyShrink;
           gl_PointSize = clamp(finalPtSize, 1.0, uLens.w);
 
-          float ptMargin = (finalPtSize / max(1.0, uLens.z)) * 1.15;
-          float clipX = dep * (1.06 + ptMargin / max(0.35, uLens.y));
-          float clipY = dep * (1.06 + ptMargin);
-          // Early cull off-screen, far meadow & sub-pixel sprites when settled behind open pages
-          float cullFar = mix(68.0, 24.0, step(0.85, settle));
-          if (dep < 0.55 || dep > cullFar || abs(p.x) > clipX || abs(p.y) > clipY || (settle > 0.85 && finalPtSize < 1.6)) {
-            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-            gl_PointSize = 0.0;
+          if (isHeart < 0.5 && isAura < 0.5) {
+            float farSettleFade = 1.0 - smoothstep(0.16, 0.88, settle) * smoothstep(18.0, 32.0, dep);
+            float tinySettleFade = 1.0 - smoothstep(0.30, 0.88, settle) * (1.0 - smoothstep(1.4, 3.4, finalPtSize));
+            opacity *= farSettleFade * tinySettleFade;
           }
 
           float farFade = 1.0 - smoothstep(14.0, 56.0, dep) * mix(0.58, 0.28, max(blossom, isHeart));
@@ -1026,7 +1022,16 @@ export function createLotusScene(canvas, options) {
 
           if (bug > 0.5) {
             float beat = 0.5 + 0.5 * sin(t * (1.6 + seed * 0.85) + ang);
-            opacity = (0.18 + 0.82 * smoothstep(0.24, 0.94, beat)) * (1.0 - smoothstep(16.0, 36.0, dep));
+            opacity = (0.18 + 0.82 * smoothstep(0.24, 0.94, beat)) * (1.0 - smoothstep(16.0, 36.0, dep)) * (1.0 - smoothstep(0.20, 0.88, settle) * 0.75);
+          }
+
+          float ptMargin = (finalPtSize / max(1.0, uLens.z)) * 1.15;
+          float clipX = dep * (1.06 + ptMargin / max(0.35, uLens.y));
+          float clipY = dep * (1.06 + ptMargin);
+          // Cull off-screen or fully faded-out sprites without any sudden pop
+          if (dep < 0.55 || dep > 68.0 || opacity < 0.004 || abs(p.x) > clipX || abs(p.y) > clipY) {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            gl_PointSize = 0.0;
           }
 
           float tileCol = mod(tile, 8.0);
@@ -1372,7 +1377,7 @@ export function createLotusScene(canvas, options) {
         pushParticle(x, y, z, size, tile, R(), litScale, roleVal, ang, r, 0.52 + R() * 0.72, 0.0);
       };
 
-      const foliageCount = lowEnd ? 5600 : 7500;
+      const foliageCount = lowEnd ? 5200 : 7000;
       for (let i = 0; i < foliageCount; i++) {
         if (!(i & 511)) await yieldSlice();
         const z = 0.95 + Math.pow(R(), 1.12) * 60.5;
@@ -1436,6 +1441,18 @@ export function createLotusScene(canvas, options) {
         const x = (R() * 2 - 1) * 3.80 + valleyCourse(z);
         const y = meadowFloor(x, z) + 0.12 + R() * 0.26;
         pushGrass(x, y, z, 0.72 + R() * 0.88, 0.44 + R() * 0.66, 0.0);
+      }
+      for (let i = 0; i < (lowEnd ? 110 : 160); i++) {
+        const z = 1.55 + R() * 0.90;
+        const x = -1.65 + R() * 2.70 + valleyCourse(z);
+        const y = meadowFloor(x, z) + 0.08 + R() * 0.30;
+        pushGrass(x, y, z, 0.64 + R() * 0.78, 0.44 + R() * 0.66, 0.0);
+      }
+      for (let i = 0; i < (lowEnd ? 120 : 180); i++) {
+        const z = 11.5 + R() * 9.5;
+        const x = (R() * 2 - 1) * 5.20 + valleyCourse(z);
+        const y = meadowFloor(x, z) + 0.65 + R() * 0.95;
+        pushGrass(x, y, z, 0.72 + R() * 0.92, 0.46 + R() * 0.68, 0.0);
       }
 
       // 2. Siltora-Style Cascading Diagonal Wildflower Streams (Abundant Pastel Pink + Scattered Pastel Blue)
@@ -1533,7 +1550,30 @@ export function createLotusScene(canvas, options) {
         [2.55, 13.2, 1, 1.18, 1.10, 0.95, 0.38],
         [-1.90, 16.8, 3, 1.28, 1.25, 0.95, 0.30],
         [0.0, 17.2, 4, 1.30, 1.25, 0.94, 0.44],
-        [1.90, 16.8, 6, 1.28, 1.25, 0.95, 0.36]
+        [1.90, 16.8, 6, 1.28, 1.25, 0.95, 0.36],
+        // 1b. Front bottom middle-left & middle-right fill
+        [-1.45, 2.05, 5, 0.86, 0.68, 0.95, 0.25],
+        [-1.10, 1.88, 1, 0.84, 0.64, 0.95, 0.35],
+        [-0.65, 1.95, 6, 0.84, 0.66, 0.95, 0.35],
+        [-0.25, 2.00, 2, 0.84, 0.66, 0.95, 0.30],
+        [0.30, 1.85, 7, 0.82, 0.64, 0.95, 0.15],
+        [0.75, 1.75, 0, 0.80, 0.62, 0.95, 0.00],
+        // 5b. Behind big lotus shoulders & inner-valley floral backdrop
+        [-3.40, 12.0, 2, 1.18, 1.05, 0.96, 0.90],
+        [-4.40, 15.0, 6, 1.28, 1.15, 0.96, 0.65],
+        [-2.50, 13.5, 0, 1.15, 1.05, 0.96, 1.45],
+        [-3.20, 17.5, 7, 1.32, 1.20, 0.96, 1.25],
+        [-1.10, 12.5, 3, 1.08, 0.98, 0.95, 1.85],
+        [0.00, 13.0, 5, 1.12, 1.02, 0.95, 1.95],
+        [1.10, 12.5, 6, 1.08, 0.98, 0.95, 1.95],
+        [-1.60, 16.5, 1, 1.24, 1.15, 0.95, 1.90],
+        [0.00, 17.5, 2, 1.26, 1.18, 0.95, 2.15],
+        [1.60, 16.5, 7, 1.24, 1.15, 0.95, 2.00],
+        [3.40, 12.0, 4, 1.18, 1.05, 0.96, 1.20],
+        [4.40, 15.0, 6, 1.28, 1.15, 0.96, 1.15],
+        [2.50, 13.5, 1, 1.15, 1.05, 0.96, 1.75],
+        [3.20, 17.5, 5, 1.32, 1.20, 0.96, 1.65],
+        [5.20, 19.0, 7, 1.36, 1.22, 0.96, 0.90]
       );
 
       // Midground valley pockets on slopes + sparse faint center canyon floor wisps
@@ -1775,7 +1815,7 @@ export function createLotusScene(canvas, options) {
         Math.abs(settleTarget - settleMix) > 0.004;
 
       const pointerActive = now - lastPointerMoveMs < 550;
-      const settledOpen = settleMix > 0.92 && bloomTarget === 1 && Math.abs(bloomTarget - bloomMix) < 0.02;
+      const settledOpen = settleMix > 0.975 && bloomTarget === 1 && Math.abs(bloomTarget - bloomMix) < 0.015;
       const minGap = animating ? 0 : settledOpen ? 45 : pointerActive ? 16 : 33;
 
       const gap = now - (lastNow || now - 16);
@@ -1841,7 +1881,7 @@ export function createLotusScene(canvas, options) {
       const dpr = settledOpen ? maxDpr : Math.min(targetDpr, Math.sqrt(budget / (cw * ch)));
       const maxPointSize = Math.min(
         hwMaxPointSize,
-        Math.round((settledOpen ? 52 : lowEnd ? 84 : 96) * dpr)
+        Math.round((lowEnd ? 84 : 96) * dpr)
       );
       const W = Math.max(2, Math.round(cw * dpr));
       const H = Math.max(2, Math.round(ch * dpr));
