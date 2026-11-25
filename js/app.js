@@ -5,7 +5,14 @@
   "use strict";
 
   const DATA = window.PORTFOLIO_DATA || {};
-  const VALID_TABS = new Set(["home", "uses", "works", "card"]);
+  const VALID_TABS = new Set(["home", "tools", "works", "contact"]);
+  const TAB_ALIASES = { uses: "tools", card: "contact" };
+
+  function normalizeTab(raw) {
+    const key = String(raw || "").trim().toLowerCase();
+    const mapped = TAB_ALIASES[key] || key;
+    return VALID_TABS.has(mapped) ? mapped : null;
+  }
 
   const htmlEl = document.documentElement;
   const bodyEl = document.body;
@@ -13,10 +20,13 @@
   const introStage = document.getElementById("intro-stage");
   const introTrigger = document.getElementById("intro-bloom-trigger");
   const introGreeting = document.getElementById("intro-greeting");
+  const introCueEl = document.getElementById("intro-cue");
   const btnBackIntro = document.getElementById("btn-back-intro");
   const reducedMotionMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
   const portfolioShell = document.getElementById("portfolio-shell");
+  const portfolioScroll = document.getElementById("portfolio-scroll");
   const portfolioMain = document.getElementById("portfolio-view");
+  const bottomNav = document.getElementById("bottom-nav");
   const navButtons = Array.from(document.querySelectorAll(".bottom-nav-btn[data-tab]"));
 
   const btnMotionToggle = document.getElementById("btn-motion-toggle");
@@ -168,6 +178,8 @@
     const icons = {
       github: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>',
       discord: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 9.5c-.8 0-1.5.7-1.5 1.5s.7 1.5 1.5 1.5 1.5-.7 1.5-1.5S9.8 9.5 9 9.5Zm6 0c-.8 0-1.5.7-1.5 1.5s.7 1.5 1.5 1.5 1.5-.7 1.5-1.5-.7-1.5-1.5-1.5Z"/><path d="M18.5 6.5A14 14 0 0 0 15 5.2l-.5 1a11 11 0 0 0-5 0l-.5-1a14 14 0 0 0-3.5 1.3C3.3 9.9 2.7 13.2 3 16.5a14.4 14.4 0 0 0 4.3 2.2l.9-1.4a9.6 9.6 0 0 1-1.5-.7l.4-.3a10.6 10.6 0 0 0 9.8 0l.4.3a9.6 9.6 0 0 1-1.5.7l.9 1.4a14.4 14.4 0 0 0 4.3-2.2c.4-3.8-.6-7-2.5-10Z"/></svg>',
+      card: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><circle cx="8.5" cy="11" r="2"/><path d="M5.5 16c.8-1.4 2-2 3-2s2.2.6 3 2"/><line x1="14" y1="10" x2="18.5" y2="10"/><line x1="14" y1="13.5" x2="17.5" y2="13.5"/></svg>',
+      arrowRight: '<svg class="btn-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>',
       mail: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m3 7 9 6 9-6"/></svg>',
       lotus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 12c-1.8-2.2-2.6-5.2-.9-6.8.7-.6.9.8.9 1.2 0-.4.2-1.8.9-1.2 1.7 1.6.9 4.6-.9 6.8Z"/><path d="M12 12c1.4-2.4 4-4.2 6.1-3.1.8.4-.4 1-.8 1.2.4-.1 1.7-.4 1.4.5-.7 2.2-3.8 2.4-6.7 1.4Z"/><path d="M12 12c2.7.5 5.2 2.4 4.8 4.7-.1.9-1.1.1-1.4-.2.3.3 1 1.4 0 1.4-2.3.1-3.5-2.8-3.4-5.9Z"/><path d="M12 12c.1 3.1-1.1 6-3.4 5.9-1 0-.3-1.1 0-1.4-.3.3-1.3 1.1-1.4.2-.4-2.3 2.1-4.2 4.8-4.7Z"/><path d="M12 12c-2.9 1-6 .8-6.7-1.4-.3-.9 1-.6 1.4-.5-.4-.2-1.6-.8-.8-1.2 2.1-1.1 4.7.7 6.1 3.1Z"/></svg>',
       sparkle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 1.9 5.6L19.5 10.5l-5.6 1.9L12 18l-1.9-5.6-5.6-1.9 5.6-1.9L12 3Z"/></svg>',
@@ -327,12 +339,90 @@
 
   let motionPaused = false;
 
-  const initialHashTab = window.location.hash.replace(/^#/, "").toLowerCase();
-  let activeTab = VALID_TABS.has(initialHashTab) ? initialHashTab : "home";
-  let activeUseFilter = "All";
+  const initialHashTab = normalizeTab(window.location.hash.replace(/^#/, ""));
+  let activeTab = initialHashTab || "home";
+  let activeUseFilter = "Software";
   let activeWorkFilter = "All";
   let stage = "intro";
   let lastTriggerEl = null;
+  let liveDiscordAvatarUrl = null;
+  let lastAvatarFetchMs = 0;
+
+  function resolveAvatarSrc() {
+    return liveDiscordAvatarUrl || DATA.profile?.avatarImage || null;
+  }
+
+  function renderAvatarMarkup(altText) {
+    const src = resolveAvatarSrc();
+    return src
+      ? `<img src="${esc(src)}" alt="${esc(altText)}" data-fallback="true" data-kind="avatar" data-live-avatar="true">`
+      : getDefaultAvatarSvg();
+  }
+
+  function applyLiveAvatarToDom(url) {
+    if (!url || url === liveDiscordAvatarUrl) return;
+    liveDiscordAvatarUrl = url;
+    document.querySelectorAll("[data-avatar-slot]").forEach((slot) => {
+      const existingImg = slot.querySelector("img[data-live-avatar='true']");
+      if (existingImg) {
+        if (existingImg.getAttribute("src") !== url) {
+          existingImg.setAttribute("src", url);
+        }
+      } else {
+        const alt = DATA.profile?.name || "Profile avatar";
+        slot.innerHTML = `<img src="${esc(url)}" alt="${esc(alt)}" data-fallback="true" data-kind="avatar" data-live-avatar="true">`;
+        attachImageFallbacks(slot);
+      }
+    });
+  }
+
+  function buildDiscordCdnUrl(id, avatarHash) {
+    if (avatarHash) {
+      const ext = avatarHash.startsWith("a_") ? "gif" : "webp";
+      return `https://cdn.discordapp.com/avatars/${id}/${avatarHash}.${ext}?size=256`;
+    }
+    try {
+      const index = Number((BigInt(id) >> 22n) % 6n);
+      return `https://cdn.discordapp.com/embed/avatars/${index}.png`;
+    } catch {
+      return "https://cdn.discordapp.com/embed/avatars/0.png";
+    }
+  }
+
+  async function syncDiscordAvatar(force = false) {
+    const rawId = String(DATA.profile?.discordUserId || "").trim();
+    if (!/^\d{17,20}$/.test(rawId)) return;
+    const now = Date.now();
+    if (!force && now - lastAvatarFetchMs < 60000) return;
+    lastAvatarFetchMs = now;
+
+    try {
+      const res = await fetch(`https://api.lanyard.rest/v1/users/${rawId}`, { cache: "no-store" });
+      if (res.ok) {
+        const json = await res.json();
+        const user = json?.data?.discord_user;
+        if (user) {
+          applyLiveAvatarToDom(buildDiscordCdnUrl(rawId, user.avatar));
+          return;
+        }
+      }
+    } catch {
+      // Fall back to japi.rest below
+    }
+
+    try {
+      const res = await fetch(`https://japi.rest/discord/v1/user/${rawId}`, { cache: "no-store" });
+      if (res.ok) {
+        const json = await res.json();
+        const user = json?.data;
+        if (user) {
+          applyLiveAvatarToDom(buildDiscordCdnUrl(rawId, user.avatar));
+        }
+      }
+    } catch {
+      // Keep fallback avatar silently when offline or unreachable
+    }
+  }
 
   const lotusScene = window.createLotusScene
     ? window.createLotusScene(document.getElementById("lotus-canvas"), {
@@ -347,10 +437,14 @@
       })
     : null;
 
+  if (introCueEl && DATA.intro?.cue) {
+    introCueEl.textContent = DATA.intro.cue;
+  }
   if (introTrigger && DATA.intro?.lotusAriaLabel) {
     const greetPrefix = DATA.intro?.greeting ? `${DATA.intro.greeting} — ` : "";
     introTrigger.setAttribute("aria-label", `${greetPrefix}${DATA.intro.lotusAriaLabel}`);
   }
+  syncDiscordAvatar(true);
 
   // --------------------------------------------------------------------------
   // Interactive Cursor-Driven "Hello, im Ari" Greeting Motion
@@ -561,7 +655,10 @@
     }
   }
 
-  document.addEventListener("visibilitychange", () => setPageInactive(document.hidden));
+  document.addEventListener("visibilitychange", () => {
+    setPageInactive(document.hidden);
+    if (!document.hidden) syncDiscordAvatar(false);
+  });
   window.addEventListener("blur", () => setPageInactive(true));
   window.addEventListener("focus", () => setPageInactive(false));
   window.addEventListener("pagehide", () => setPageInactive(true));
@@ -667,22 +764,22 @@
     const bannerHtml = p.bannerImage
       ? `<img src="${esc(p.bannerImage)}" alt="Profile banner" data-fallback="true" data-kind="banner">`
       : getDefaultBannerSvg();
-    const avatarHtml = p.avatarImage
-      ? `<img src="${esc(p.avatarImage)}" alt="${esc(p.name || "Profile avatar")}" data-fallback="true" data-kind="avatar">`
-      : getDefaultAvatarSvg();
+    const avatarHtml = renderAvatarMarkup(p.name || "Profile avatar");
 
     const metaParts = [p.handle, p.location, p.pronouns, p.joined].filter(Boolean);
     const socialsHtml = (p.socials || [])
       .map((s) => {
         const href = safeUrl(s.url);
         const ext = isExternalUrl(href);
-        const tabAttr = href.startsWith("#") && VALID_TABS.has(href.slice(1)) ? ` data-nav-tab="${esc(href.slice(1))}"` : "";
+        const tab = href.startsWith("#") ? normalizeTab(href.slice(1)) : null;
+        const tabAttr = tab ? ` data-nav-tab="${esc(tab)}"` : "";
         return `<a class="social-icon-btn" href="${esc(href)}" aria-label="${esc(s.label)}"${tabAttr}${ext ? ' target="_blank" rel="noopener noreferrer"' : ""}>${getSmallIconSvg(s.icon)}</a>`;
       })
       .join("");
 
+    const targetTab = normalizeTab(p.primaryAction?.targetTab || "contact") || "contact";
     const primaryActionHtml = p.primaryAction
-      ? `<button class="hero-primary-btn" type="button" data-nav-tab="${esc(p.primaryAction.targetTab || "card")}">${esc(p.primaryAction.label || "+ card")}</button>`
+      ? `<button class="hero-primary-btn" type="button" data-nav-tab="${esc(targetTab)}">${getSmallIconSvg("card")}<span>${esc(p.primaryAction.label || "contact")}</span>${getSmallIconSvg("arrowRight")}</button>`
       : "";
 
     const statsHtml =
@@ -709,19 +806,23 @@
           <div class="hero-body">
             <div class="hero-top-row">
               <div class="hero-identity">
-                <div class="hero-avatar-frame">${avatarHtml}</div>
+                <div class="hero-avatar-frame" data-avatar-slot="hero">${avatarHtml}</div>
                 <div class="hero-name-block">
                   <h1 id="view-heading" class="hero-name" tabindex="-1">
                     ${esc(p.name || "Your Name")}
                     ${p.sparkle ? `<span class="hero-sparkle" aria-hidden="true">${esc(p.sparkle)}</span>` : ""}
                   </h1>
-                  <p class="hero-meta">${metaParts.map((m) => `<span>${esc(m)}</span>`).join('<span aria-hidden="true">·</span>')}</p>
+                  ${metaParts.length ? `<p class="hero-meta">${metaParts.map((m) => `<span>${esc(m)}</span>`).join('<span aria-hidden="true">·</span>')}</p>` : ""}
                 </div>
               </div>
-              <div class="hero-actions">
-                ${socialsHtml}
-                ${primaryActionHtml}
-              </div>
+              ${
+                socialsHtml || primaryActionHtml
+                  ? `<div class="hero-actions">
+                      ${socialsHtml}
+                      ${primaryActionHtml}
+                    </div>`
+                  : ""
+              }
             </div>
             <div class="hero-bottom-row">
               <p class="hero-bio">${esc(p.bio || "")}</p>
@@ -741,22 +842,26 @@
     `;
   }
 
-  function renderUsesView() {
+  function renderToolsView() {
     const items = DATA.activeUses || [];
-    const groups = ["All", ...new Set(items.map((i) => i.filterGroup).filter(Boolean))];
-    const filtered = activeUseFilter === "All" ? items : items.filter((i) => i.filterGroup === activeUseFilter);
+    const rawGroups = [...new Set(items.map((i) => i.filterGroup).filter(Boolean))];
+    const groups = rawGroups.includes("Software")
+      ? ["Software", ...rawGroups.filter((g) => g !== "Software"), "All"]
+      : ["All", ...rawGroups];
+    const activeFilter = groups.includes(activeUseFilter) ? activeUseFilter : groups[0];
+    const filtered = activeFilter === "All" ? items : items.filter((i) => i.filterGroup === activeFilter);
 
     return `
       <div class="portfolio-view-inner">
         <div class="section-head-centered">
-          <h1 id="view-heading" class="section-title" tabindex="-1">Peripherals &amp; Tools</h1>
-          <p class="section-subtitle">Everything on my desk and in my daily creative workflow. Click any card for details.</p>
+          <h1 id="view-heading" class="section-title" tabindex="-1">${esc(DATA.activeUsesSection?.heading || "Tools & Setup")}</h1>
+          <p class="section-subtitle">Software, hardware, and daily creative essentials. Click any card for details.</p>
         </div>
 
         <div class="filter-pills" role="group" aria-label="Filter tools by category">
           ${groups
             .map(
-              (grp) => `<button class="filter-pill" type="button" data-use-filter="${esc(grp)}" aria-pressed="${grp === activeUseFilter ? "true" : "false"}">${esc(grp)}</button>`
+              (grp) => `<button class="filter-pill" type="button" data-use-filter="${esc(grp)}" aria-pressed="${grp === activeFilter ? "true" : "false"}">${esc(grp)}</button>`
             )
             .join("")}
         </div>
@@ -770,14 +875,25 @@
 
   function renderWorksView() {
     const works = DATA.works || [];
+    if (works.length === 0) {
+      return `
+        <div class="portfolio-view-inner">
+          <div class="section-head-centered">
+            <h1 id="view-heading" class="section-title" tabindex="-1">${esc(DATA.worksSection?.heading || "Works")}</h1>
+          </div>
+          <div class="empty-works-panel">Nothing here yet — adding soon ✨</div>
+        </div>
+      `;
+    }
+
     const cats = ["All", ...new Set(works.map((w) => w.category).filter(Boolean))];
     const filtered = activeWorkFilter === "All" ? works : works.filter((w) => w.category === activeWorkFilter);
 
     return `
       <div class="portfolio-view-inner">
         <div class="section-head-centered">
-          <h1 id="view-heading" class="section-title" tabindex="-1">${esc(DATA.worksSection?.heading || "Works & Assets")}</h1>
-          <p class="section-subtitle">${esc(DATA.worksSection?.subtitle || "")}</p>
+          <h1 id="view-heading" class="section-title" tabindex="-1">${esc(DATA.worksSection?.heading || "Works")}</h1>
+          ${DATA.worksSection?.subtitle ? `<p class="section-subtitle">${esc(DATA.worksSection.subtitle)}</p>` : ""}
         </div>
 
         <div class="filter-pills" role="group" aria-label="Filter works by discipline">
@@ -795,27 +911,26 @@
     `;
   }
 
-  function renderCardView() {
+  function renderContactView() {
     const p = DATA.profile || {};
     const lk = DATA.links || {};
-    const avatarHtml = p.avatarImage
-      ? `<img src="${esc(p.avatarImage)}" alt="${esc(p.name || "Avatar")}" data-fallback="true" data-kind="avatar">`
-      : getDefaultAvatarSvg();
+    const avatarHtml = renderAvatarMarkup(p.name || "Avatar");
+    const subParts = [p.handle, p.pronouns].filter(Boolean);
 
     return `
       <div class="portfolio-view-inner">
         <div class="section-head-centered">
-          <h1 id="view-heading" class="section-title" tabindex="-1">${esc(lk.heading || "Links & Card")}</h1>
-          <p class="section-subtitle">${esc(p.name || "")} · ${esc(p.handle || "")}</p>
+          <h1 id="view-heading" class="section-title" tabindex="-1">${esc(lk.heading || "Contact")}</h1>
+          <p class="section-subtitle">${esc(p.name || "")}${p.handle ? ` · ${esc(p.handle)}` : ""}</p>
         </div>
 
         <div class="card-layout">
-          <section class="glass-panel" aria-label="Profile card summary">
+          <section class="glass-panel" aria-label="Contact card summary">
             <div class="hero-identity" style="align-items:center;">
-              <div class="hero-avatar-frame" style="margin-top:0;width:68px;height:68px;">${avatarHtml}</div>
+              <div class="hero-avatar-frame" data-avatar-slot="contact" style="margin-top:0;width:68px;height:68px;">${avatarHtml}</div>
               <div>
-                <h2 class="hero-name" style="font-size:22px;">${esc(p.name || "")} <span class="hero-sparkle" aria-hidden="true">${esc(p.sparkle || "")}</span></h2>
-                <p class="hero-meta">${esc(p.handle || "")} · ${esc(p.pronouns || "")}</p>
+                <h2 class="hero-name" style="font-size:22px;">${esc(p.name || "")}${p.sparkle ? ` <span class="hero-sparkle" aria-hidden="true">${esc(p.sparkle)}</span>` : ""}</h2>
+                ${subParts.length ? `<p class="hero-meta">${esc(subParts.join(" · "))}</p>` : ""}
               </div>
             </div>
 
@@ -842,11 +957,12 @@
             <p id="copy-feedback" class="copy-feedback" role="status"></p>
           </section>
 
-          <section class="links-stack" aria-label="All links">
+          <section class="links-stack" aria-label="Contact links">
             ${(lk.items || [])
               .map((item) => {
                 const href = safeUrl(item.url);
-                const tabAttr = href.startsWith("#") && VALID_TABS.has(href.slice(1)) ? ` data-nav-tab="${esc(href.slice(1))}"` : "";
+                const navTarget = href.startsWith("#") ? normalizeTab(href.slice(1)) : null;
+                const tabAttr = navTarget ? ` data-nav-tab="${esc(navTarget)}"` : "";
                 const ext = isExternalUrl(href);
                 return `
                   <a class="link-row-card" href="${esc(href)}"${tabAttr}${ext ? ' target="_blank" rel="noopener noreferrer"' : ""}>
@@ -870,9 +986,9 @@
   function renderActiveView() {
     if (!portfolioMain) return;
     let html = "";
-    if (activeTab === "uses") html = renderUsesView();
+    if (activeTab === "tools") html = renderToolsView();
     else if (activeTab === "works") html = renderWorksView();
-    else if (activeTab === "card") html = renderCardView();
+    else if (activeTab === "contact") html = renderContactView();
     else html = renderHomeView();
 
     portfolioMain.innerHTML = html;
@@ -919,7 +1035,7 @@
     dialogEyebrow.textContent = eyebrow;
     const href = safeUrl(url);
     const hasLink = href && href !== "#";
-    const tabTarget = href.startsWith("#") && VALID_TABS.has(href.slice(1)) ? href.slice(1) : null;
+    const tabTarget = href.startsWith("#") ? normalizeTab(href.slice(1)) : null;
     const ext = isExternalUrl(href);
 
     dialogBody.innerHTML = `
@@ -950,8 +1066,8 @@
   function wireRenderedViewInteractions() {
     portfolioMain.querySelectorAll("[data-nav-tab]").forEach((el) => {
       el.addEventListener("click", (e) => {
-        const target = el.dataset.navTab;
-        if (VALID_TABS.has(target)) {
+        const target = normalizeTab(el.dataset.navTab);
+        if (target) {
           e.preventDefault();
           navigateTo(target);
         }
@@ -1032,31 +1148,61 @@
     }
   }
 
-  function navigateTo(nextTab, updateHash = true) {
-    if (!VALID_TABS.has(nextTab)) return;
-    if (nextTab === activeTab && portfolioMain.innerHTML.trim() !== "") return;
+  let activeViewTransition = null;
+  const coarsePointerMQ = window.matchMedia("(pointer: coarse)");
 
-    activeTab = nextTab;
-    if (updateHash && window.location.hash !== `#${nextTab}`) {
-      history.pushState(null, "", `#${nextTab}`);
+  function getPortfolioScrollTop() {
+    return portfolioScroll ? portfolioScroll.scrollTop : window.scrollY;
+  }
+
+  function resetPortfolioScroll() {
+    if (portfolioScroll) portfolioScroll.scrollTop = 0;
+  }
+
+  function navigateTo(nextTab, updateHash = true) {
+    const targetTab = normalizeTab(nextTab);
+    if (!targetTab) return;
+    if (targetTab === activeTab && portfolioMain.innerHTML.trim() !== "") return;
+
+    activeTab = targetTab;
+    if (updateHash && window.location.hash !== `#${targetTab}`) {
+      history.pushState(null, "", `#${targetTab}`);
     }
 
     const applyUpdate = () => {
       renderActiveView();
       updateNavState();
-      window.scrollTo({ top: 0, behavior: "instant" });
+      resetPortfolioScroll();
     };
 
-    if (!document.startViewTransition || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (activeViewTransition && typeof activeViewTransition.skipTransition === "function") {
+      try {
+        activeViewTransition.skipTransition();
+      } catch {
+        // Ignore stale view transition state
+      }
+      activeViewTransition = null;
+    }
+
+    if (!document.startViewTransition || coarsePointerMQ.matches || reducedMotionMQ.matches) {
       applyUpdate();
       focusViewHeading();
       return;
     }
 
-    const transition = document.startViewTransition(applyUpdate);
-    transition.finished.finally(() => {
+    try {
+      const transition = document.startViewTransition(applyUpdate);
+      activeViewTransition = transition;
+      transition.finished
+        .catch(() => {})
+        .finally(() => {
+          if (activeViewTransition === transition) activeViewTransition = null;
+          focusViewHeading();
+        });
+    } catch {
+      applyUpdate();
       focusViewHeading();
-    });
+    }
   }
 
   navButtons.forEach((btn) => {
@@ -1066,8 +1212,8 @@
   });
 
   window.addEventListener("hashchange", () => {
-    const tab = window.location.hash.replace(/^#/, "").toLowerCase();
-    if (VALID_TABS.has(tab)) {
+    const tab = normalizeTab(window.location.hash.replace(/^#/, ""));
+    if (tab) {
       if (stage === "intro") {
         activeTab = tab;
         openPortfolio();
@@ -1112,10 +1258,13 @@
     portfolioShell.hidden = false;
     portfolioShell.inert = false;
     portfolioShell.removeAttribute("aria-hidden");
+    bottomNav?.removeAttribute("aria-hidden");
+    if (bottomNav) bottomNav.inert = false;
     introStage.setAttribute("aria-hidden", "true");
     btnBackIntro?.removeAttribute("aria-hidden");
     btnBackIntro?.removeAttribute("tabindex");
 
+    resetPortfolioScroll();
     renderActiveView();
     updateNavState();
     resetGreetingMotion();
@@ -1133,10 +1282,12 @@
     bodyEl.dataset.stage = "intro";
     portfolioShell.inert = true;
     portfolioShell.setAttribute("aria-hidden", "true");
+    if (bottomNav) bottomNav.inert = true;
+    bottomNav?.setAttribute("aria-hidden", "true");
     introStage.removeAttribute("aria-hidden");
     btnBackIntro?.setAttribute("aria-hidden", "true");
     btnBackIntro?.setAttribute("tabindex", "-1");
-    window.scrollTo({ top: 0, behavior: "instant" });
+    resetPortfolioScroll();
 
     lotusScene?.setBloom(false);
     measureGreetingChars();
@@ -1164,7 +1315,7 @@
           introWheelAccum += e.deltaY;
           if (introWheelAccum > 26) openPortfolio();
         }
-      } else if (stage === "open" && window.scrollY <= 1 && e.deltaY < 0) {
+      } else if (stage === "open" && getPortfolioScrollTop() <= 1 && e.deltaY < 0) {
         returnWheelAccum += Math.abs(e.deltaY);
         if (returnWheelAccum > 165) closeToIntro();
       }
@@ -1175,8 +1326,12 @@
   window.addEventListener(
     "touchstart",
     (e) => {
+      if (e.target?.closest?.(".bottom-nav, .utility-dock, .back-intro-btn")) {
+        touchStartY = null;
+        return;
+      }
       touchStartY = e.touches[0]?.clientY ?? null;
-      touchStartScrollY = window.scrollY;
+      touchStartScrollY = getPortfolioScrollTop();
     },
     { passive: true }
   );
@@ -1195,8 +1350,7 @@
           touchStartY = null;
           openPortfolio();
         }
-      } else if (stage === "open" && touchStartScrollY <= 1 && window.scrollY <= 1 && dy < -6) {
-        // Claim the downward pull at top of page before mobile pull-to-refresh triggers
+      } else if (stage === "open" && touchStartScrollY <= 1 && getPortfolioScrollTop() <= 1 && dy < -6) {
         e.preventDefault();
         if (dy < -62) {
           touchStartY = null;

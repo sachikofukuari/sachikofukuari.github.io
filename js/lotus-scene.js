@@ -537,9 +537,21 @@
          vec3 sillCol = vec3(0.010, 0.012, 0.010);
          col = mix(col, sillCol, sillMask * 0.85);
 
-         // Crisp 3-layer twinkling stars above the V-valley skyline against pure AMOLED black
+         // Faint drifting pinkish aurora + crisp 3-layer twinkling stars above V-valley skyline
          float skyMask = smoothstep(sillEdge - 0.01, sillEdge + 0.14, uv.y) * smoothstep(-0.08, 0.30, uv.y);
          if (skyMask > 0.004) {
+           float axA = uv.x * 1.45;
+           float wave1 = sin(axA * 2.1 + uTime * 0.14 + sin(axA * 1.3 - uTime * 0.09) * 1.1);
+           float wave2 = sin(axA * 3.4 - uTime * 0.11 + cos(axA * 1.9 + uTime * 0.07) * 0.85);
+           float curtainY = 0.56 + 0.16 * wave1 + 0.08 * wave2;
+           float band1 = exp(-pow((uv.y - curtainY) * 4.4, 2.0));
+           float band2 = exp(-pow((uv.y - (curtainY + 0.15)) * 5.2, 2.0)) * 0.55;
+           float rays = 0.72 + 0.28 * sin(uv.x * 16.0 + wave1 * 3.0 + uTime * 0.22);
+           float auroraEnv = smoothstep(0.18, 0.52, uv.y) * (1.0 - smoothstep(0.78, 1.06, uv.y));
+           float aurora = (band1 + band2) * rays * auroraEnv * skyMask;
+           vec3 auroraCol = mix(vec3(0.95, 0.34, 0.66), vec3(0.78, 0.42, 0.88), clamp(uv.y * 0.9 - 0.1, 0.0, 1.0));
+           col += auroraCol * aurora * 0.14;
+
            vec2 starUv = vec2(uv.x * uAspect, uv.y);
            float s1 = starLayer(starUv, 26.0, 0.88, 165.0, 0.0, 0.0) * 0.56;
            float s2 = starLayer(starUv, 13.0, 0.87, 110.0, 0.0, 19.3) * 0.74;

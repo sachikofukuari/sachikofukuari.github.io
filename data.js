@@ -15,7 +15,7 @@
 window.PORTFOLIO_DATA = {
   intro: {
     greeting: "Hello, im Ari",
-    cue: "Scroll or click to bloom",
+    cue: "scroll or click",
     lotusAriaLabel: "Bloom lotus to enter portfolio",
   },
 
@@ -24,37 +24,29 @@ window.PORTFOLIO_DATA = {
   },
 
   profile: {
-    name: "Your Name",
-    sparkle: "✦",
-    handle: "@yourhandle",
-    location: "your city",
-    pronouns: "they/them",
-    joined: "est. 2026",
-    bio: "designer // developer // creative :3",
-    // Replace `null` with "assets/images/banner.jpg" to use a custom header banner
-    bannerImage: null,
-    // Replace `null` with "assets/images/avatar.jpg" to use a custom avatar photo
+    name: "Sachiko Fukuari (幸子福有)",
+    sparkle: "",
+    handle: "@sachikofukuari",
+    location: "",
+    pronouns: "",
+    joined: "",
+    bio: "be kind! 💖🌸 ",
+    bannerImage: "assets/images/banner.jpg",
+    // Set your 17-19 digit Discord User ID here to auto-sync your live Discord profile picture
+    discordUserId: "",
     avatarImage: null,
     primaryAction: {
-      label: "+ card",
-      targetTab: "card",
+      label: "contact",
+      targetTab: "contact",
     },
-    socials: [
-      { label: "GitHub", icon: "github", url: "https://github.com/" },
-      { label: "Discord", icon: "discord", url: "#card" },
-      { label: "Email", icon: "mail", url: "mailto:hello@example.com" },
-    ],
-    stats: [
-      { label: "projects", value: "12" },
-      { label: "tools", value: "8" },
-      { label: "craft", value: "✦" },
-    ],
+    socials: [],
+    stats: [],
     badges: [],
   },
 
   activeUsesSection: {
-    heading: "Active Peripherals",
-    viewAllLabel: "see all uses →",
+    heading: "Tools & Setup",
+    viewAllLabel: "see all tools →",
   },
 
   // First 4 items with `featured: true` appear in the Home stacked deck grid.
@@ -100,7 +92,7 @@ window.PORTFOLIO_DATA = {
       image: null,
       iconType: "keyboard",
       notes: "Column-staggered split layout with tactile silent switches and creamy pastel keycaps.",
-      url: "#uses",
+      url: "#tools",
     },
     {
       id: "headset-openback",
@@ -114,7 +106,7 @@ window.PORTFOLIO_DATA = {
       image: null,
       iconType: "headset",
       notes: "Airy soundstage and plush earpads built for long ambient playlists and crisp voice calls.",
-      url: "#uses",
+      url: "#tools",
     },
     {
       id: "tablet-pen",
@@ -142,7 +134,7 @@ window.PORTFOLIO_DATA = {
       image: null,
       iconType: "mic",
       notes: "Warm vocal presence on a low-profile boom arm that stays tucked neatly out of frame.",
-      url: "#uses",
+      url: "#tools",
     },
     {
       id: "software-design",
@@ -177,95 +169,28 @@ window.PORTFOLIO_DATA = {
   favorites: {
     heading: "Games & Favorites",
     items: [
-      { name: "Tactical FPS", shortCode: "VAL", iconType: "crosshair", url: "#uses", accent: "#f0859f" },
-      { name: "Arena Movement", shortCode: "FIN", iconType: "triangle", url: "#uses", accent: "#f6b2c9" },
-      { name: "Cozy Rhythm", shortCode: "RHY", iconType: "music", url: "#uses", accent: "#e898d4" },
+      { name: "Tactical FPS", shortCode: "VAL", iconType: "crosshair", url: "#tools", accent: "#f0859f" },
+      { name: "Arena Movement", shortCode: "FIN", iconType: "triangle", url: "#tools", accent: "#f6b2c9" },
+      { name: "Cozy Rhythm", shortCode: "RHY", iconType: "music", url: "#tools", accent: "#e898d4" },
       { name: "Sketch & Tea", shortCode: "ART", iconType: "sparkle", url: "#works", accent: "#f9c6d7" },
     ],
   },
 
   worksSection: {
-    heading: "Works & Assets",
-    subtitle: "Selected projects, illustrations, interactive experiments, and downloadable goodies.",
+    heading: "Works",
+    subtitle: "",
   },
 
-  works: [
-    {
-      id: "work-lotus-garden",
-      title: "Sakura Meadow WebGL Study",
-      category: "Code",
-      year: "2026",
-      status: "live",
-      summary: "Procedural botanical point-sprite renderer with blurred foreground bokeh, far twilight fade, central 3D sakura bloom, and drifting white-rose mist.",
-      tags: ["WebGL", "GLSL", "Vanilla JS"],
-      image: null,
-      gradientSeed: 1,
-      url: "#home",
-    },
-    {
-      id: "work-sakura-ui",
-      title: "Dusty Rose Card Kit",
-      category: "Assets",
-      year: "2026",
-      status: "freebie",
-      summary: "Stacked deck card templates, pastel surface tokens, and inline botanical SVG accents crafted for personal corner sites.",
-      tags: ["Design System", "CSS", "SVG"],
-      image: null,
-      gradientSeed: 2,
-      url: "#uses",
-    },
-    {
-      id: "work-petal-brushes",
-      title: "Falling Petal Cursor Trail",
-      category: "Code",
-      year: "2026",
-      status: "open source",
-      summary: "High-DPI Canvas2D particle emitter using cached multi-tone petal sprites, distance interpolation, and sinusoidal breeze tumble.",
-      tags: ["Canvas2D", "Physics", "Motion"],
-      image: null,
-      gradientSeed: 3,
-      url: "#home",
-    },
-    {
-      id: "work-sketchbook",
-      title: "Pastel Ink Sketchbook",
-      category: "Art",
-      year: "2025",
-      status: "archive",
-      summary: "Monochrome lilac line studies, soft blossom stickers, and cozy character portraits painted between late-night tea sessions.",
-      tags: ["Illustration", "Procreate", "Stickers"],
-      image: null,
-      gradientSeed: 4,
-      url: "#card",
-    },
-    {
-      id: "work-notes",
-      title: "Slow Web Field Notes",
-      category: "Writing",
-      year: "2025",
-      status: "essay",
-      summary: "Notes on zero-build personal websites, tactile hover micro-interactions, and designing warm digital spaces that feel handmade.",
-      tags: ["Essays", "Web Craft", "Notes"],
-      image: null,
-      gradientSeed: 5,
-      url: "#card",
-    },
-  ],
+  works: [],
 
   links: {
-    heading: "Links & Card",
-    cardBio: "Building cozy interactive web spaces, clean hardware setups, and pastel visual toys. Always happy to chat about creative front-end, custom keyboards, or art swaps.",
-    currently: [
-      { label: "Listening", value: "ambient rose lo-fi & acousticOSTs" },
-      { label: "Tinkering", value: "WebGL floral shaders & split keymaps" },
-      { label: "Open to", value: "creative collabs & small web commissions" },
-    ],
+    heading: "Contact",
+    cardBio: "be kind! 💖🌸 ",
+    currently: [],
     items: [
-      { label: "GitHub", sublabel: "Code, shaders, and static web experiments", url: "https://github.com/", icon: "github" },
-      { label: "Discord", sublabel: "@yourhandle — fastest way to say hi", url: "https://discord.com/", icon: "discord" },
-      { label: "Art & Moodboard", sublabel: "Sketches, setups, and color studies", url: "#works", icon: "palette" },
-      { label: "Direct Email", sublabel: "hello@example.com — project & collab inquiries", url: "mailto:hello@example.com", icon: "mail" },
-      { label: "Gear & Setup List", sublabel: "Full list of peripherals and daily software", url: "#uses", icon: "keyboard" },
+      { label: "GitHub", sublabel: "sachikofukuari", url: "https://github.com/sachikofukuari", icon: "github" },
+      { label: "Discord", sublabel: "@sachikofukuari", url: "https://discord.com/", icon: "discord" },
+      { label: "Tools & Setup", sublabel: "Software, peripherals, and daily workflow", url: "#tools", icon: "keyboard" },
     ],
   },
 };
