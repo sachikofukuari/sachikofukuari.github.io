@@ -494,6 +494,8 @@ function resetPortfolioScroll() {
   if (portfolioScroll) portfolioScroll.scrollTop = 0;
 }
 
+const TAB_INDEX = { home: 0, tools: 1, works: 2, contact: 3 };
+
 function navigateTo(nextTab, updateHash = true) {
   const targetTab = normalizeTab(nextTab);
   if (!targetTab) return;
@@ -503,6 +505,7 @@ function navigateTo(nextTab, updateHash = true) {
     activeUseFilter = "Software";
   }
   activeTab = targetTab;
+  lotusScene?.setTabIndex(TAB_INDEX[targetTab] || 0);
   if (updateHash && window.location.hash !== `#${targetTab}`) {
     history.pushState(null, "", `#${targetTab}`);
   }
@@ -555,9 +558,10 @@ function lockTransition(durationMs) {
 
 function openPortfolio() {
   if (stage === "open" || transitionLocked) return;
+  lotusScene?.setTabIndex(TAB_INDEX[activeTab] || 0);
   lotusScene?.setBloom(true);
   greetingCtrl.clearWriteMasks();
-  lockTransition(2100);
+  lockTransition(1780);
   stage = "open";
   bodyEl.dataset.stage = "open";
   portfolioShell.hidden = false;
@@ -580,7 +584,7 @@ function openPortfolio() {
 
   setTimeout(() => {
     if (stage === "open") focusViewHeading();
-  }, 620);
+  }, 1050);
 }
 
 function closeToIntro(restoreFocus = false) {

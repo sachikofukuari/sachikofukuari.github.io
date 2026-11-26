@@ -55,9 +55,11 @@ export function createLotusScene(canvas, options) {
     let bloomMix = bloomTarget;
     let settleTarget = opts.initialOpen ? 1 : 0;
     let settleMix = settleTarget;
-    let flyTarget = opts.initialOpen ? 0.26 : 0;
+    let flyTarget = opts.initialOpen ? 0.22 : 0;
+    let flyStage0 = flyTarget;
     let flyStage1 = flyTarget;
     let flyMix = flyTarget;
+    let fallElapsed = opts.initialOpen ? 10 : 0;
 
     const reducedMotionMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -84,10 +86,10 @@ export function createLotusScene(canvas, options) {
       alpha: true,
       premultipliedAlpha: true,
       depth: true,
-      stencil: false,
+      stencil: true,
       antialias: false,
       preserveDrawingBuffer: false,
-      powerPreference: "low-power",
+      powerPreference: "default",
     });
 
     if (!gl) {
@@ -123,6 +125,7 @@ export function createLotusScene(canvas, options) {
     function createNoopApi() {
       return {
         setBloom() {},
+        setTabIndex() {},
         setTheme() {},
         setPaused() {},
         pulseScatter() {},
@@ -510,7 +513,7 @@ export function createLotusScene(canvas, options) {
       return compileProgramFor(gl, vSrc, fSrc);
     }
 
-    // 1. Pink Twilight Starry Sky + Wandering Slight-White Glow + Mountain Sill
+    // 1. Seamless 360-Degree Camera-Synced Spherical Starry Sky + Periodic Aurora + V-Valley Sill
     const bgProg = compileProgramFor(
       bgGl,
       `attribute vec2 pos;
@@ -519,10 +522,15 @@ export function createLotusScene(canvas, options) {
          gl_Position = vec4(pos, 0.0, 1.0);
          uv = pos;
        }`,
-      `precision mediump float;
+      `precision highp float;
        varying vec2 uv;
        uniform float uTime;
        uniform float uAspect;
+       uniform float uFocal;
+       uniform mat3 uViewMat;
+       uniform vec2 uAim;
+       uniform float uSettle;
+       uniform float uSkyFade;
 
        float hash21(vec2 p) {
          p = fract(p * vec2(123.34, 456.21));
@@ -530,36 +538,25 @@ export function createLotusScene(canvas, options) {
          return fract(p.x * p.y);
        }
 
-       float hash11(float p) {
-         p = fract(p * 0.1031);
-         p *= p + 33.33;
-         p *= p + p;
-         return fract(p);
-       }
-
-       float vnoise1(float x) {
-         float i = floor(x);
-         float f = fract(x);
-         float u = f * f * (3.0 - 2.0 * f);
-         return mix(hash11(i), hash11(i + 1.0), u);
-       }
-
-       float starLayer(vec2 suv, float scale, float threshold, float coreK, float sparkleWeight, float phaseShift) {
-         vec2 gv = fract(suv * scale) - 0.5;
-         vec2 id = floor(suv * scale);
+       float starLayer360(float azNorm, float el, float cols, float threshold, float coreK, float sparkleWeight, float phaseShift) {
+         float uCell = azNorm * cols;
+         float vCell = el * (cols / 6.2831853) * 1.15;
+         vec2 grid = vec2(uCell, vCell);
+         vec2 gv = fract(grid) - 0.5;
+         vec2 id = vec2(mod(floor(uCell), cols), floor(vCell));
          float rnd = hash21(id + phaseShift);
          if (rnd < threshold) return 0.0;
          vec2 rVec = vec2(hash21(id + vec2(13.7, 29.1) + phaseShift), hash21(id + vec2(71.3, 19.7) + phaseShift));
          vec2 offs = (rVec - 0.5) * 0.34;
          vec2 fp = gv - offs;
          float dist = length(fp);
-         float cellWin = smoothstep(0.32, 0.08, dist);
+         float cellWin = smoothstep(0.34, 0.08, dist);
          if (cellWin <= 0.001) return 0.0;
          float d2 = dist * dist;
          float twinkle = 0.54 + 0.46 * sin(uTime * (1.15 + rVec.y * 2.1) + rVec.x * 28.0);
          float core = exp(-d2 * coreK);
-         float halo = exp(-d2 * 30.0) * 0.24;
-         float crossRays = exp(-abs(fp.x) * 85.0 - abs(fp.y) * 22.0) + exp(-abs(fp.y) * 85.0 - abs(fp.x) * 22.0);
+         float halo = exp(-d2 * 28.0) * 0.24;
+         float crossRays = exp(-abs(fp.x) * 82.0 - abs(fp.y) * 20.0) + exp(-abs(fp.y) * 82.0 - abs(fp.x) * 20.0);
          float starVal = (core + halo + crossRays * sparkleWeight * 0.48) * cellWin;
          return starVal * twinkle * (0.65 + 0.50 * rVec.x);
        }
@@ -567,58 +564,60 @@ export function createLotusScene(canvas, options) {
        void main() {
          vec3 col = vec3(0.0);
 
-         // V-valley canyon silhouette tucked behind steep 3D wildflower valley walls
-         float sillScale = clamp((uAspect - 0.45) / 1.15, 0.28, 1.0);
+         vec2 ndc = uv - uAim * vec2(mix(0.032, 0.018, uSettle), mix(0.020, 0.014, uSettle));
+         vec3 rayView = normalize(vec3((ndc.x * uAspect) / max(0.2, uFocal), ndc.y / max(0.2, uFocal), 1.0));
+         vec3 rayWorld = normalize(vec3(
+           dot(uViewMat[0], rayView),
+           dot(uViewMat[1], rayView),
+           dot(uViewMat[2], rayView)
+         ));
+         float az = atan(rayWorld.x, rayWorld.z);
+         float el = asin(clamp(rayWorld.y, -1.0, 1.0));
+         float azNorm = az / 6.2831853 + 0.5;
+
+         // Intro V-valley sill that dissolves smoothly as the camera orbits around 360 degrees
+         float sillScale = clamp((uAspect - 0.45) / 1.15, 0.28, 1.0) * uSkyFade;
          float ax = abs(uv.x);
          float asym = uv.x < 0.0 ? 1.06 : 0.94;
          float vWall = (0.04 + (ax * 0.44 + ax * ax * 0.44) * asym) * sillScale;
-         float sillEdge = vWall - 0.06 + 0.015 * sin(uv.x * 6.0);
-         float sillMask = 1.0 - smoothstep(sillEdge - 0.14, sillEdge + 0.04, uv.y);
-         vec3 sillCol = vec3(0.010, 0.012, 0.010);
-         col = mix(col, sillCol, sillMask * 0.85);
+         float sillEdge = mix(-0.45, vWall - 0.06 + 0.015 * sin(az * 6.0), uSkyFade);
+         float sillMask = (1.0 - smoothstep(sillEdge - 0.14, sillEdge + 0.04, uv.y)) * uSkyFade;
+         col = mix(col, vec3(0.010, 0.012, 0.010), sillMask * 0.85);
 
-         // Realistic sweeping curved IRL pastel pink + pastel blue aurora curtains & crisp twinkling stars
-         float skyMask = smoothstep(sillEdge - 0.04, sillEdge + 0.16, uv.y) * smoothstep(-0.22, 0.08, uv.y);
+         // 360-degree seamless twilight aurora ribbons & twinkling spherical stars
+         float skyMask = smoothstep(sillEdge - 0.04, sillEdge + 0.14, uv.y) * smoothstep(-0.22, 0.04, el);
          if (skyMask > 0.004) {
-           float px = uv.x * 1.15;
-           float foldP = 0.08 * sin(px * 2.1 + uTime * 0.11)
-             + 0.045 * sin(px * 4.3 - uTime * 0.08 + 1.4)
-             + 0.025 * (vnoise1(px * 3.0 + uTime * 0.06) - 0.5);
-           float curveP = 0.44 + 0.14 * px - 0.08 * px * px + foldP;
-           float dyP = uv.y - curveP;
+           float curveP = 0.24 + 0.08 * sin(az * 2.0 + 0.4 + uTime * 0.05)
+             + 0.045 * cos(az * 4.0 - uTime * 0.07)
+             + 0.025 * sin(az * 7.0 + uTime * 0.04);
+           float dyP = el - curveP;
 
-           float foldB = 0.085 * cos(px * 1.9 - uTime * 0.10 + 0.7)
-             + 0.04 * sin(px * 3.9 + uTime * 0.07)
-             + 0.025 * (vnoise1(px * 2.8 - uTime * 0.05 + 7.1) - 0.5);
-           float curveB = 0.52 - 0.10 * px - 0.07 * px * px + foldB;
-           float dyB = uv.y - curveB;
+           float curveB = 0.30 + 0.075 * cos(az * 2.0 - 0.8 - uTime * 0.04)
+             + 0.04 * sin(az * 3.0 + uTime * 0.06)
+             + 0.02 * cos(az * 6.0 - uTime * 0.05);
+           float dyB = el - curveB;
 
-           float curtainP = dyP >= 0.0 ? exp(-dyP * 4.6) : exp(dyP * 11.5);
+           float curtainP = dyP >= 0.0 ? exp(-dyP * 7.2) : exp(dyP * 16.0);
            if (dyP > -0.02) {
-             curtainP += exp(-max(0.0, dyP - 0.06) * 2.6) * 0.25 * smoothstep(-0.02, 0.05, dyP);
+             curtainP += exp(-max(0.0, dyP - 0.04) * 3.8) * 0.25 * smoothstep(-0.02, 0.04, dyP);
            }
-           float curtainB = dyB >= 0.0 ? exp(-dyB * 4.2) : exp(dyB * 10.5);
+           float curtainB = dyB >= 0.0 ? exp(-dyB * 6.6) : exp(dyB * 14.5);
            if (dyB > -0.02) {
-             curtainB += exp(-max(0.0, dyB - 0.06) * 2.5) * 0.24 * smoothstep(-0.02, 0.05, dyB);
+             curtainB += exp(-max(0.0, dyB - 0.04) * 3.6) * 0.24 * smoothstep(-0.02, 0.04, dyB);
            }
 
-           float rayCoordP = px * 4.6 - dyP * 1.8 + sin(px * 2.2 + uTime * 0.09) * 0.85;
-           float shimmerP = 0.68 + 0.32 * (0.6 * vnoise1(rayCoordP + uTime * 0.08) + 0.4 * vnoise1(rayCoordP * 2.1 - uTime * 0.06));
-           float rayCoordB = px * 4.4 + dyB * 1.6 + cos(px * 2.0 - uTime * 0.08) * 0.80;
-           float shimmerB = 0.66 + 0.34 * (0.6 * vnoise1(rayCoordB - uTime * 0.07 + 11.3) + 0.4 * vnoise1(rayCoordB * 2.0 + uTime * 0.05 + 5.7));
+           float shimmerP = 0.68 + 0.32 * (0.6 * (0.5 + 0.5 * sin(az * 12.0 - dyP * 4.0 + uTime * 0.14)) + 0.4 * (0.5 + 0.5 * cos(az * 19.0 + uTime * 0.10)));
+           float shimmerB = 0.66 + 0.34 * (0.6 * (0.5 + 0.5 * cos(az * 11.0 + dyB * 4.0 - uTime * 0.12)) + 0.4 * (0.5 + 0.5 * sin(az * 17.0 + uTime * 0.09)));
 
-           float latFade = smoothstep(1.38, 0.22, abs(uv.x));
-           float topFade = 1.0 - smoothstep(0.92, 1.12, uv.y);
+           float topFade = 1.0 - smoothstep(0.95, 1.35, el);
+           vec3 pinkCol = mix(vec3(1.0, 0.48, 0.76), vec3(0.88, 0.58, 0.92), clamp(dyP * 3.8 + 0.25, 0.0, 1.0));
+           vec3 blueCol = mix(vec3(0.46, 0.80, 1.0), vec3(0.68, 0.72, 1.0), clamp(dyB * 3.4 + 0.25, 0.0, 1.0));
+           col += pinkCol * (curtainP * shimmerP * topFade * skyMask) * 0.165;
+           col += blueCol * (curtainB * shimmerB * topFade * skyMask) * 0.145;
 
-           vec3 pinkCol = mix(vec3(1.0, 0.48, 0.76), vec3(0.88, 0.58, 0.92), clamp(dyP * 2.4 + 0.25, 0.0, 1.0));
-           vec3 blueCol = mix(vec3(0.46, 0.80, 1.0), vec3(0.68, 0.72, 1.0), clamp(dyB * 2.2 + 0.25, 0.0, 1.0));
-           col += pinkCol * (curtainP * shimmerP * latFade * topFade * skyMask) * 0.165;
-           col += blueCol * (curtainB * shimmerB * latFade * topFade * skyMask) * 0.145;
-
-           vec2 starUv = vec2(uv.x * uAspect, uv.y);
-           float s1 = starLayer(starUv, 26.0, 0.88, 165.0, 0.0, 0.0) * 0.56;
-           float s2 = starLayer(starUv, 13.0, 0.87, 110.0, 0.0, 19.3) * 0.74;
-           float s3 = starLayer(starUv, 6.5,  0.88, 110.0, 1.0, 47.9) * 0.84;
+           float s1 = starLayer360(azNorm, el, 96.0, 0.88, 165.0, 0.0, 0.0) * 0.58;
+           float s2 = starLayer360(azNorm, el, 48.0, 0.87, 110.0, 0.0, 19.3) * 0.76;
+           float s3 = starLayer360(azNorm, el, 24.0, 0.88, 110.0, 1.0, 47.9) * 0.86;
            vec3 starCol = vec3(1.0, 0.97, 1.0) * (s1 + s3) + vec3(1.0, 0.84, 0.93) * s2;
            col += starCol * skyMask;
          }
@@ -635,9 +634,10 @@ export function createLotusScene(canvas, options) {
        attribute vec4 aPetalUV;   // x: u (0..1), y: v (-1..1), z: ringNorm, w: petalAz
        attribute vec4 aPetalDim;  // x: len, y: maxW, z: seed, w: ringIndex
 
-       uniform vec4 uCamera;
+       uniform vec3 uCamPos;
+       uniform mat3 uViewMat;
        uniform vec4 uLens;
-       uniform vec4 uAction;      // x: time, y: bloom, z: flyMix, w: mouseActive
+       uniform vec4 uAction;      // x: time, y: bloom, z: diveMix, w: mouseActive
        uniform vec2 uState;       // x: settle, y: aspect
        uniform vec2 uAim;
 
@@ -650,35 +650,46 @@ export function createLotusScene(canvas, options) {
        varying vec3 vNormal;
        varying vec3 vWorldPos;
 
-       float lotusWidth(float u) {
+       float lotusWidthClosed(float u) {
          float t = clamp(u, 0.0, 1.0);
          if (t <= 0.0001 || t >= 0.9999) return 0.0;
-         return sin(pow(t, 0.72) * 3.14159265) * (1.0 - 0.10 * t * t);
+         return sin(pow(t, 0.60) * 3.14159265) * (1.0 - 0.10 * t * t);
+       }
+
+       float lotusWidthOpen(float u) {
+         float t = clamp(u, 0.0, 1.0);
+         if (t >= 0.9999) return 0.0;
+         float baseJoin = 0.62 * pow(max(0.0, 1.0 - t), 1.75);
+         return (baseJoin + sin(pow(max(0.0001, t), 0.68) * 3.14159265)) * (1.0 - 0.10 * t * t);
        }
 
        vec3 evalSakuraPoint(float u, float v, float ringNorm, float petalAz, float len, float maxW, float rb, float t, float settle) {
          float uSafe = max(0.0001, u);
-         float wEnv = lotusWidth(u);
+         float wClosed = lotusWidthClosed(u);
+         float wOpen = lotusWidthOpen(u);
+         float wEnv = mix(wClosed, wOpen, rb);
          float breath = sin(t * 0.85 + petalAz * 2.0 + u) * mix(0.008, 0.020, rb);
 
-         // 1. Fully closed, sealed teardrop lotus bud (rb = 0): outer petals wrap cleanly taller & wider over inner petals (r_outer > r_mid > r_inner at every height)
+         // 1. Fully closed, sealed teardrop lotus bud (rb = 0)
          float budH = 3.66 - 0.22 * ringNorm;
-         float yClosed = pow(uSafe, 0.90) * budH;
+         float yClosed = pow(uSafe, 0.96) * budH;
          float shellR = mix(1.48, 0.94, ringNorm);
-         float baseC = mix(0.28, 0.08, ringNorm) * (1.0 - u) * (1.0 - u);
-         float rClosed = baseC + shellR * wEnv * (1.0 - 0.08 * u) + 0.025 * (1.0 - ringNorm) * (1.0 - u);
+         float baseC = mix(0.05, 0.015, ringNorm) * (1.0 - u) * (1.0 - u);
+         float rClosed = baseC + shellR * wClosed * (1.0 - 0.08 * u) + 0.015 * (1.0 - ringNorm) * (1.0 - u);
 
-         // 2. Fully open cupped upward-curving lotus blossom (rb = 1): pointed tips always curve up into view
-         float openTilt = mix(1.12, 0.44, ringNorm) + breath;
-         float along = u * len * (1.0 - 0.12 * rb);
-         float baseO = mix(0.50, 0.12, ringNorm);
-         float bellyArc = sin(u * 3.14159265) * mix(0.24, 0.12, ringNorm);
-         float tipLift = pow(uSafe, 2.2) * mix(0.32, 0.20, ringNorm);
-         float spoon = mix(0.10, 0.06, ringNorm) * wEnv * (1.0 - v * v);
+         // 2. Fully open lush overlapping lotus bowl (rb = 1): petals overlap tightly to hide calyx base completely from inner POV
+         float dive = uAction.z;
+         float openTilt = mix(1.24, 0.76, ringNorm) + breath + dive * 0.04 * (1.0 - ringNorm * 0.3);
+         float along = u * len * (1.0 - 0.08 * rb);
+         float baseO = mix(0.48, 0.36, ringNorm);
+         float baseYO = mix(0.18, 0.38, ringNorm);
+         float bellyArc = sin(u * 3.14159265) * mix(0.34, 0.18, ringNorm);
+         float tipLift = pow(uSafe, 2.1) * mix(0.42, 0.30, ringNorm);
+         float spoon = mix(0.11, 0.065, ringNorm) * wOpen * (1.0 - v * v);
          float nRadO = cos(openTilt);
          float nYO = -sin(openTilt);
          float rOpen = baseO + sin(openTilt) * along + nRadO * (bellyArc + spoon);
-         float yOpen = 0.44 + cos(openTilt) * along + nYO * (bellyArc + spoon) + tipLift;
+         float yOpen = baseYO + cos(openTilt) * along + nYO * (bellyArc + spoon) + tipLift;
 
          // Smooth closed-bud -> open-lotus peel
          float peel = sin(rb * 3.14159265) * (0.16 * (1.0 - ringNorm)) * sin(u * 3.14159265);
@@ -690,13 +701,13 @@ export function createLotusScene(canvas, options) {
          float nRad = cos(effTilt);
          float nY = -sin(effTilt);
          float petalPillow = mix(0.022, 0.016, ringNorm) * wEnv * (1.0 - v * v) * (1.0 - rb * 0.65);
-         float shingle = v * wEnv * (0.052 + 0.050 * rb);
+         float shingle = v * wEnv * (0.078 + 0.018 * rb);
 
          float rEff = radial + nRad * (petalPillow + shingle);
          float yEff = height + nY * (petalPillow + shingle);
 
-         // Exact width-preserving arc wrap (closed) -> tangential fan + enlarged bloom petals: STRICTLY 0 width at u = 1.0 for ALL rb
-         float halfW = wEnv * (maxW * 0.5) * (1.24 + 0.14 * rb + settle * 0.12);
+         // Exact width-preserving arc wrap (closed) -> generous overlapping bloom petals
+         float halfW = wEnv * (maxW * 0.5) * (1.22 + 0.16 * rb);
          float wrapR = max(rEff, 0.04);
          float arcAng = clamp((v * halfW) / wrapR, -0.76, 0.76) * (1.0 - rb);
          float tangOpen = v * halfW * rb;
@@ -707,9 +718,10 @@ export function createLotusScene(canvas, options) {
          float rx = rEff * ca - tangOpen * sa;
          float rz = rEff * sa + tangOpen * ca;
 
-         float scaleL = 1.0 + rb * 0.38 + settle * 0.14;
-         vec3 anchor = vec3(0.0, 0.42, 8.5 - rb * 0.85);
-         return anchor + vec3(rx, yEff + settle * 0.12 * u, rz) * scaleL;
+         float bloomLift = smoothstep(0.0, 1.0, uAction.y) * 2.10;
+         float scaleL = 1.0 + rb * 0.40 + settle * 0.08;
+         vec3 anchor = vec3(0.0, 0.42 + bloomLift, 8.5);
+         return anchor + vec3(rx, yEff + settle * 0.04 * u, rz) * scaleL;
        }
 
        void main() {
@@ -736,21 +748,20 @@ export function createLotusScene(canvas, options) {
          vec3 rawN = cross(pU1 - p0, pV1 - p0);
          vec3 nrm = rawN / max(length(rawN), 0.0001);
 
-         float cx = wPos.x - uCamera.x;
-         float cy = wPos.y - uCamera.y;
-         float dep = wPos.z - uCamera.z;
+         vec3 view = uViewMat * (wPos - uCamPos);
+         float dep = max(0.35, view.z);
 
-         vec2 p = vec2((cx * uLens.x) / uLens.y, cy * uLens.x + dep * uCamera.w);
-         p.x += uAim.x * dep * 0.032;
-         p.y += uAim.y * dep * 0.020;
+         vec2 p = vec2((view.x * uLens.x) / uLens.y, view.y * uLens.x);
+         p.x += uAim.x * dep * mix(0.032, 0.018, settle);
+         p.y += uAim.y * dep * mix(0.020, 0.014, settle);
 
-         float zn = (dep - 0.6) / 24.0 * 2.0 - 1.0;
+         float zn = ((dep - 0.35) / 78.0) * 2.0 - 1.0;
          gl_Position = vec4(p, zn * dep, dep);
 
          vUv = vec2(u, v);
          vNdc = p / max(0.1, dep);
          vDist = clamp(u, 0.0, 1.0);
-         vSide = v * lotusWidth(u);
+         vSide = v * lotusWidthClosed(u);
          vRing = ringNorm;
          vBloom = rb;
          vNormal = nrm;
@@ -759,7 +770,7 @@ export function createLotusScene(canvas, options) {
       `${hasDerivatives ? "#extension GL_OES_standard_derivatives : enable\n#define HAS_DERIV 1\n" : "#define HAS_DERIV 0\n"}precision highp float;
        uniform float uSettle;
        uniform float uAaPass;
-       uniform vec4 uCamera;
+       uniform vec3 uCamPos;
        uniform vec4 uAction;
        uniform vec2 uState;
        uniform vec2 uAim;
@@ -778,95 +789,394 @@ export function createLotusScene(canvas, options) {
          float v = vUv.y;
          float d = vDist;
 
-         // Soft pastel lotus pink bloom palette
-         vec3 throat = vec3(0.96, 0.46, 0.68);
-         vec3 mid = vec3(1.0, 0.70, 0.84);
-         vec3 edge = vec3(1.0, 0.88, 0.94);
+         // Rich pastel sakura pink lotus palette (unmistakable baby-pink, never white or purple)
+         vec3 throat = vec3(0.96, 0.44, 0.58);
+         vec3 mid = vec3(0.99, 0.64, 0.75);
+         vec3 edge = vec3(1.00, 0.80, 0.86);
 
-         vec3 col = mix(throat, mid, smoothstep(0.05, 0.45, d));
-         col = mix(col, edge, smoothstep(0.66, 1.0, d) * 0.78);
-         col = mix(col, mix(col * 1.06, edge, 0.20), vRing * 0.35);
+         vec3 col = mix(throat, mid, smoothstep(0.05, 0.48, d));
+         col = mix(col, edge, smoothstep(0.68, 1.0, d) * 0.72);
+         col = mix(col, mix(col * 1.05, edge, 0.16), vRing * 0.30);
 
-         // Delicate lengthwise lotus petal striations (softened when settled in background)
+         // Delicate lengthwise lotus petal striations (keep subtle structure overhead)
          float veinWave = 0.5 + 0.5 * cos(v * 22.0);
-         float veinMask = smoothstep(0.14, 0.38, d) * (1.0 - smoothstep(0.76, 0.98, d)) * (1.0 - uSettle);
-         col *= 1.0 - veinWave * veinMask * 0.045;
+         float veinMask = smoothstep(0.14, 0.38, d) * (1.0 - smoothstep(0.76, 0.98, d)) * (1.0 - uSettle * 0.25);
+         col *= 1.0 - veinWave * veinMask * 0.05;
 
-         // Warm rose-tinted inter-petal overlap AO (clean separation without greyness)
-         float ao = 0.84 + 0.16 * smoothstep(-0.32, 0.14, vSide);
-         col = mix(col * vec3(0.78, 0.52, 0.68), col, ao);
+         // Warm rose-tinted inter-petal overlap AO (crisp petal-to-petal depth without grey or purple)
+         float ao = 0.65 + 0.35 * smoothstep(-0.35, 0.18, vSide);
+         col = mix(col * vec3(0.80, 0.46, 0.58), col, ao);
 
-         // Hue-shifted luminous pastel pink key light + rose bounce from flowerbed below
+         // Warm luminous pastel pink key light + rose bounce from flowerbed below
          vec3 n = normalize(vNormal);
          if (!gl_FrontFacing) n = -n;
-         vec3 viewDir = normalize(uCamera.xyz - vWorldPos);
-         vec3 lightDir = normalize(vec3(-0.32, 0.72, -0.62));
+         vec3 viewDir = normalize(uCamPos - vWorldPos);
+         vec3 introLight = normalize(vec3(-0.32, 0.72, -0.62));
+         vec3 openLight = normalize(viewDir * 0.42 + vec3(0.0, 0.90, 0.0));
+         vec3 lightDir = normalize(mix(introLight, openLight, vBloom * 0.72));
          float diff = max(dot(n, lightDir), 0.0);
          float wrap = 0.5 + 0.5 * dot(n, lightDir);
-         float shadeT = clamp(wrap * 0.72 + diff * 0.38, 0.0, 1.0);
+         float shadeT = clamp(wrap * 0.70 + diff * 0.38, 0.0, 1.0);
          float bounce = max(dot(n, normalize(vec3(0.25, -0.55, -0.45))), 0.0);
-         vec3 lightTint = mix(vec3(0.76, 0.48, 0.63), vec3(1.16, 1.02, 1.09), shadeT);
-         lightTint += vec3(0.22, 0.12, 0.18) * bounce;
-         lightTint = mix(lightTint, vec3(0.98, 0.80, 0.91), uSettle * 0.50);
+         vec3 lightTint = mix(vec3(0.76, 0.49, 0.59), vec3(1.08, 0.91, 0.96), shadeT);
+         lightTint += vec3(0.14, 0.08, 0.10) * bounce;
+         lightTint = mix(lightTint, vec3(0.97, 0.81, 0.87), uSettle * 0.10);
          col *= lightTint;
 
-         // Inner lantern pastel pink bloom + backlit translucency + pastel specular sheen
+         // Soft pastel sakura inner lantern + backlit translucency + gentle specular sheen
          vec3 halfVec = normalize(lightDir + viewDir);
          float sss = pow(clamp(dot(-viewDir, lightDir) * 0.5 + 0.5, 0.0001, 1.0), 1.5) * (0.35 + 0.65 * d);
          float rim = pow(clamp(1.0 - max(dot(n, viewDir), 0.0), 0.0001, 1.0), 2.2);
          float spec = pow(max(dot(n, halfVec), 0.0001), 16.0) * (1.0 - uSettle * 0.8);
-         col += vec3(1.0, 0.56, 0.78) * exp(-d * 1.9) * (0.28 + 0.22 * vBloom);
-         col += vec3(1.0, 0.66, 0.83) * sss * (0.24 + 0.14 * vBloom);
-         col += vec3(1.0, 0.86, 0.94) * spec * 0.26;
+         col += vec3(1.00, 0.46, 0.64) * exp(-d * 1.85) * (0.22 + 0.18 * vBloom);
+         col += vec3(1.00, 0.56, 0.72) * sss * (0.18 + 0.15 * vBloom);
+         col += vec3(1.00, 0.86, 0.90) * spec * 0.18;
 
-         // Soft pastel blush Fresnel rim glow outlines each petal (feathered out when settled)
-         float rimEdge = max(smoothstep(0.76, 0.98, abs(v)), smoothstep(0.82, 0.99, u)) * (1.0 - uSettle);
-         col = mix(col, vec3(1.0, 0.86, 0.93), clamp(rimEdge * 0.28 + rim * 0.38 * (1.0 - uSettle * 0.55), 0.0, 0.55));
+         // Crisp glowing pastel sakura pink bloom rim around every petal (glows brightly while preserving petal separation)
+         float rimEdge = max(smoothstep(0.76, 0.99, abs(v)), smoothstep(0.80, 0.995, u)) * (1.0 - uSettle * 0.06);
+         col = mix(col, vec3(1.00, 0.77, 0.86), clamp(rimEdge * 0.42 + rim * 0.34 * (1.0 - uSettle * 0.12), 0.0, 0.54));
+         col += vec3(1.00, 0.56, 0.72) * (pow(rim, 2.0) * (0.24 + 0.16 * vBloom) + rimEdge * (0.16 + 0.12 * vBloom));
 
-         // Localized glowing blooming highlight directly under hovering cursor
+         // Localized glowing blooming highlight directly under hovering cursor (softened silky sheen)
          vec2 hDiff = vNdc - uAim;
          hDiff.x *= uState.y;
-         float hoverClos = exp(-dot(hDiff, hDiff) * 10.5) * uAction.w * (1.0 - uSettle * 0.72);
-         col *= 1.0 + hoverClos * 0.38;
-         col += vec3(1.0, 0.72, 0.88) * hoverClos * (0.28 + 0.16 * vBloom + 0.12 * d);
+         float hoverClos = exp(-dot(hDiff, hDiff) * 7.5) * uAction.w * (1.0 - uSettle * 0.72);
+         col *= 1.0 + hoverClos * 0.14;
+         col += vec3(1.00, 0.66, 0.78) * hoverClos * (0.10 + 0.06 * vBloom + 0.04 * d);
 
-         // Pastel-preserving bloom rolloff (keeps glow airy pastel pink without clipping to white)
-         col = (col / (vec3(1.0) + col * 0.22)) * 1.14;
-         col.g = min(col.g, col.r * 0.84);
-         col = clamp(col, 0.0, 1.0);
+         // Soft rolloff preserving shadow-to-rim dynamic range -> clamp BEFORE chroma ceilings (never flat/white/purple)
+         col = col / (vec3(1.0) + col * 0.42);
+         col = clamp(col * 1.22, 0.0, 1.0);
+         col.g = min(col.g, col.r * 0.785);
+         col.b = min(col.b, min(col.r * 0.87, col.g + 0.098));
 
-         float edgeFeather = smoothstep(1.0, 0.16, abs(v)) * smoothstep(1.0, 0.22, u) * smoothstep(0.0, 0.16, u);
-         float softMask = mix(1.0, edgeFeather, uSettle);
-         float alpha = mix(1.0, 0.36, uSettle) * softMask;
+         // Subtle velvet calm when settled (strictly opaque core mesh for clean Z-buffer ordering)
+         float veilSoft = smoothstep(0.35, 1.0, uSettle);
+         col *= mix(1.0, 0.98, veilSoft);
 
          float av = abs(v);
-         float ndv = abs(dot(n, viewDir));
          #if HAS_DERIV
            float fwV = clamp(fwidth(av), 0.0025, 0.20);
            float fwU = clamp(fwidth(u), 0.0025, 0.15);
-           float fwN = clamp(fwidth(ndv), 0.004, 0.18);
          #else
            float fwV = 0.014;
            float fwU = 0.014;
-           float fwN = 0.024;
          #endif
          float aaV = 1.0 - smoothstep(1.0 - fwV * 1.45, 1.0, av);
          float aaTip = 1.0 - smoothstep(1.0 - fwU * 1.45, 1.0, u);
-         float aaBase = smoothstep(0.0, fwU * 1.0, u);
-         float aaGrazing = smoothstep(0.0, fwN * 1.35, ndv);
-         float aaCov = min(aaV * aaTip * aaBase, aaGrazing);
+         float aaBase = mix(smoothstep(0.0, fwU * 1.0, u), 1.0, vBloom);
+         float aaCov = aaV * aaTip * aaBase;
 
          if (uAaPass < 0.5) {
-           if (aaCov < 0.90) discard;
-           gl_FragColor = vec4(col * alpha, alpha);
-         } else if (uAaPass < 1.5) {
-           if (aaCov >= 0.90 || aaCov <= 0.02) discard;
-           float a = alpha * aaCov;
-           gl_FragColor = vec4(col * a, a);
+           if (aaCov < 0.88) discard;
+           gl_FragColor = vec4(col, 1.0);
          } else {
-           float a = alpha * aaCov;
+           if (aaCov >= 0.88 || aaCov <= 0.02) discard;
+           gl_FragColor = vec4(col * aaCov, aaCov);
+         }
+       }`
+    );
+
+    // 2.5 Sculpted 3D Lotus Receptacle Dome + Filaments + Calyx Base Cup, Stem & Sepals
+    const stamenProg = compileProgram(
+      `precision highp float;
+       attribute vec4 aPart;  // x: u (0..1), y: v (-1..1 or az), z: kind (0=dome, 1=fil, 2=calyx/stem, 3=sepal), w: ringOrSeed
+       attribute vec4 aGeom;  // kind 0/2: base,r,h | kind 1: az,baseR,spanR,tipH | kind 3: az,len,maxW,0
+
+       uniform vec3 uCamPos;
+       uniform mat3 uViewMat;
+       uniform vec4 uLens;
+       uniform vec4 uAction;  // x: time, y: bloom, z: diveMix, w: mouseActive
+       uniform vec2 uState;   // x: settle, y: aspect
+       uniform vec2 uAim;
+
+       varying vec4 vMeta;    // x: u, y: v, z: kind, w: reveal
+       varying vec2 vNdc;
+       varying float vRing;
+       varying vec3 vNormal;
+       varying vec3 vWorldPos;
+
+       vec3 evalFilCenter(float u, float az, float baseR, float spanR, float tipH, float rNorm, float t, float bloomOpen) {
+         float sway = sin(t * 1.15 + az * 3.0 + rNorm * 2.1) * (0.04 * u * u);
+         float rr = (baseR + pow(max(0.0001, u), 0.86) * spanR + 0.06 * sin(u * 3.14159265)) * mix(0.26, 1.0, bloomOpen);
+         float yy = 0.56 + (sin(u * 2.05) * tipH + u * (0.30 - 0.16 * rNorm)) * mix(0.30, 1.0, bloomOpen);
+         float ca = cos(az + sway);
+         float sa = sin(az + sway);
+         return vec3(ca * rr, yy, sa * rr);
+       }
+
+       vec2 evalCalyxProfile(float u, float chaliceR, float stemLen) {
+         float rr;
+         float yy;
+         if (u < 0.45) {
+           float s = u / 0.45;
+           rr = mix(chaliceR, 0.32, smoothstep(0.0, 1.0, pow(s, 0.72)));
+           yy = mix(0.14, -0.32, smoothstep(0.0, 1.0, s));
+         } else {
+           float s = (u - 0.45) / 0.55;
+           rr = mix(0.32, 0.14, pow(s, 0.55));
+           yy = mix(-0.32, -0.32 - stemLen, s);
+         }
+         return vec2(rr, yy);
+       }
+
+       void main() {
+         float u = aPart.x;
+         float v = aPart.y;
+         float kind = aPart.z;
+         float rNorm = aPart.w;
+
+         float t = uAction.x;
+         float bloom = uAction.y;
+         float settle = uState.x;
+
+         float reveal = kind < 1.5
+           ? smoothstep(0.18, 0.82, bloom)
+           : smoothstep(0.08, 0.65, bloom);
+         if (reveal < 0.002) {
+           gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+           vMeta = vec4(u, v, kind, 0.0);
+           vNdc = vec2(0.0);
+           vRing = rNorm;
+           vNormal = vec3(0.0, 1.0, 0.0);
+           vWorldPos = vec3(0.0);
+           return;
+         }
+
+         float bloomScale = smoothstep(0.0, 0.92, bloom);
+         float bloomLift = smoothstep(0.0, 1.0, bloom) * 2.10;
+         float scaleL = 1.0 + bloomScale * 0.40 + settle * 0.08;
+         vec3 anchor = vec3(0.0, 0.42 + bloomLift, 8.5);
+         vec3 wPos;
+         vec3 nrm = vec3(0.0, 1.0, 0.0);
+
+         if (kind < 0.5) {
+           // Sculpted lotus receptacle chalice dome (nested strictly inside baseO = 0.36)
+           float domeScale = mix(0.35, 1.0, reveal);
+           float rr = (u < 0.68
+             ? sin((u / 0.68) * 1.5707963)
+             : mix(1.0, 0.44, (u - 0.68) / 0.32)) * aGeom.z * domeScale;
+           float yy = aGeom.y + mix(aGeom.w, -0.08, pow(max(0.0001, u), 1.45)) * domeScale + 0.010 * sin(t * 0.9 + u * 3.0);
+           wPos = anchor + vec3(cos(v) * rr, yy, sin(v) * rr) * scaleL;
+
+           if (u > 0.03) {
+             float u1 = min(1.0, u + 0.02);
+             float rr1 = (u1 < 0.68
+               ? sin((u1 / 0.68) * 1.5707963)
+               : mix(1.0, 0.44, (u1 - 0.68) / 0.32)) * aGeom.z * domeScale;
+             float yy1 = aGeom.y + mix(aGeom.w, -0.08, pow(max(0.0001, u1), 1.45)) * domeScale;
+             float dR = rr1 - rr;
+             float dY = yy1 - yy;
+             vec3 slopeN = normalize(vec3(cos(v) * (-dY), dR, sin(v) * (-dY)));
+             nrm = normalize(mix(vec3(0.0, 1.0, 0.0), slopeN, smoothstep(0.03, 0.14, u)));
+           }
+         } else if (kind < 1.5) {
+           // Camera-billboarded cylindrical arched filament + glowing honey-gold anther tip
+           float az = aGeom.x;
+           float baseR = aGeom.y;
+           float spanR = aGeom.z;
+           float tipH = aGeom.w;
+           float bloomOpen = smoothstep(0.28, 0.94, bloom);
+
+           vec3 c0 = anchor + evalFilCenter(u, az, baseR, spanR, tipH, rNorm, t, bloomOpen) * scaleL;
+           float uNext = u > 0.96 ? u - 0.025 : u + 0.025;
+           vec3 cOther = anchor + evalFilCenter(uNext, az, baseR, spanR, tipH, rNorm, t, bloomOpen) * scaleL;
+           vec3 tang = normalize(u > 0.96 ? (c0 - cOther) : (cOther - c0));
+           vec3 toCam = normalize(uCamPos - c0);
+           vec3 rawSide = cross(tang, toCam);
+           vec3 sideAxis = length(rawSide) > 0.001 ? normalize(rawSide) : vec3(-sin(az), 0.0, cos(az));
+
+           float stalkW = mix(0.024, 0.016, clamp(u / 0.72, 0.0, 1.0));
+           float antherT = clamp((u - 0.72) / 0.28, 0.0, 1.0);
+           float antherW = 0.058 * pow(sin(antherT * 3.14159265), 0.68);
+           float halfW = (u < 0.72 ? stalkW : max(stalkW * (1.0 - antherT), antherW)) * mix(0.4, 1.0, bloomOpen);
+           wPos = c0 + sideAxis * (v * halfW * scaleL);
+           nrm = normalize(sideAxis * v + toCam * sqrt(max(0.05, 1.0 - v * v)));
+         } else if (kind < 2.5) {
+           // Botanical Calyx Cup + Tapered Emerald Lotus Stem (hidden underneath petal cup)
+           vec2 p0 = evalCalyxProfile(u, aGeom.y, aGeom.z);
+           float u1 = min(1.0, u + 0.025);
+           vec2 p1 = evalCalyxProfile(u1, aGeom.y, aGeom.z);
+           float stemSway = sin(t * 0.75 + u * 2.4) * (0.04 * u * u);
+           vec3 localPos = vec3(cos(v) * p0.x + stemSway, p0.y * mix(0.45, 1.0, reveal), sin(v) * p0.x);
+           wPos = anchor + localPos * scaleL;
+           float dR = p1.x - p0.x;
+           float dY = (p1.y - p0.y) * mix(0.45, 1.0, reveal);
+           nrm = normalize(vec3(cos(v) * dY, -dR, sin(v) * dY));
+         } else {
+           // 8 Cupped Outer Sepals Tucked Strictly Underneath Outer Petals (openTilt = 1.48)
+           float az = aGeom.x;
+           float sLen = aGeom.y;
+           float sMaxW = aGeom.z;
+           float sepTilt = 1.48 + sin(t * 0.8 + az * 2.0) * 0.012;
+           float sAlong = u * sLen * mix(0.45, 1.0, reveal);
+           float cup = sin(u * 3.14159265) * 0.10;
+           float rr = 0.48 + sin(sepTilt) * sAlong + cos(sepTilt) * cup;
+           float yy = 0.10 + cos(sepTilt) * sAlong - sin(sepTilt) * cup + pow(max(0.0001, u), 2.0) * 0.06 - settle * 0.08;
+           float wEnv = sin(pow(clamp(u, 0.001, 0.999), 0.70) * 3.14159265) * 0.5 * sMaxW;
+           float ca = cos(az);
+           float sa = sin(az);
+           vec3 localPos = vec3(rr * ca - v * wEnv * sa, yy, rr * sa + v * wEnv * ca);
+           wPos = anchor + localPos * scaleL;
+           nrm = normalize(vec3(cos(sepTilt) * ca, sin(sepTilt) * 0.85, cos(sepTilt) * sa));
+         }
+
+         vec3 view = uViewMat * (wPos - uCamPos);
+         float dep = max(0.35, view.z);
+         vec2 p = vec2((view.x * uLens.x) / uLens.y, view.y * uLens.x);
+         p.x += uAim.x * dep * mix(0.032, 0.018, settle);
+         p.y += uAim.y * dep * mix(0.020, 0.014, settle);
+
+         float zn = ((dep - 0.35) / 78.0) * 2.0 - 1.0;
+         gl_Position = vec4(p, zn * dep, dep);
+
+         vMeta = vec4(u, v, kind, reveal);
+         vNdc = p / max(0.1, dep);
+         vRing = rNorm;
+         vNormal = nrm;
+         vWorldPos = wPos;
+       }`,
+      `precision highp float;
+       uniform float uSettle;
+       uniform float uAaPass;
+       uniform vec3 uCamPos;
+       uniform vec4 uAction;
+       uniform vec2 uState;
+       uniform vec2 uAim;
+
+       varying vec4 vMeta;
+       varying vec2 vNdc;
+       varying float vRing;
+       varying vec3 vNormal;
+       varying vec3 vWorldPos;
+
+       void main() {
+         float reveal = vMeta.w;
+         if (reveal < 0.004) discard;
+         float u = vMeta.x;
+         float v = vMeta.y;
+         float kind = vMeta.z;
+
+         vec2 hDiff = vNdc - uAim;
+         hDiff.x *= uState.y;
+         float hoverGlow = exp(-dot(hDiff, hDiff) * 7.5) * uAction.w * (1.0 - uSettle * 0.55);
+
+         vec3 n = normalize(vNormal);
+         if (!gl_FrontFacing) n = -n;
+         vec3 viewDir = normalize(uCamPos - vWorldPos);
+         vec3 lightDir = normalize(vec3(-0.32, 0.78, -0.52));
+         float diff = max(dot(n, lightDir), 0.0);
+         float wrap = 0.5 + 0.5 * dot(n, lightDir);
+         float bounce = max(dot(n, normalize(vec3(0.25, -0.55, -0.45))), 0.0);
+         float rim = pow(clamp(1.0 - max(dot(n, viewDir), 0.0), 0.0001, 1.0), 2.2);
+
+         vec3 col;
+         float aaCov = 1.0;
+
+         if (kind < 0.5) {
+           // Lotus receptacle crown: shaded honey-gold top grading to blush apricot-rose walls
+           float centerFade = exp(-u * u * 2.2);
+           float podPattern = 0.5 + 0.5 * cos(u * 28.0) * cos(v * 14.0 + u * 6.0);
+           float seedPit = smoothstep(0.68, 0.96, podPattern) * smoothstep(0.06, 0.72, u) * (1.0 - smoothstep(0.75, 0.96, u));
+
+           vec3 crownCol = vec3(1.0, 0.82, 0.34);
+           vec3 midCol = vec3(0.98, 0.64, 0.36);
+           vec3 rimCol = vec3(0.94, 0.52, 0.62);
+           col = mix(midCol, crownCol, centerFade);
+           col = mix(col, rimCol, smoothstep(0.55, 1.0, u));
+           col = mix(col, vec3(0.80, 0.46, 0.30), seedPit * 0.22 * (1.0 - uSettle * 0.45));
+           col *= mix(0.76, 1.12, clamp(wrap * 0.65 + diff * 0.35, 0.0, 1.0));
+           col += vec3(0.26, 0.14, 0.12) * bounce;
+           col += vec3(1.0, 0.78, 0.24) * (0.22 + 0.20 * centerFade);
+           col += vec3(1.0, 0.72, 0.22) * rim * 0.36;
+         } else if (kind < 1.5) {
+           // Cylindrical shaded rose-gold stalk transitioning into glowing honey-gold anther tip
+           aaCov = 1.0 - smoothstep(0.62, 1.0, abs(v));
+           float cyl = sqrt(max(0.05, 1.0 - v * v));
+           float isAnther = smoothstep(0.66, 0.82, u);
+           vec3 stalkCol = mix(vec3(0.94, 0.54, 0.64), vec3(0.98, 0.72, 0.56), smoothstep(0.0, 0.68, u));
+           float antherCore = 1.0 - abs(v) * 0.72;
+           vec3 antherCol = mix(vec3(1.0, 0.72, 0.22), vec3(1.0, 0.92, 0.48), antherCore * smoothstep(0.70, 0.92, u));
+           col = mix(stalkCol, antherCol, isAnther);
+           col *= (0.82 + 0.26 * cyl) * (0.92 + 0.16 * (1.0 - vRing * 0.5));
+           col += vec3(1.0, 0.78, 0.26) * isAnther * (0.34 + 0.28 * cyl);
+           col += vec3(1.0, 0.68, 0.48) * smoothstep(0.35, 0.75, u) * 0.12;
+         } else if (kind < 2.5) {
+           // Botanical Calyx Cup + Jade-Emerald Lotus Stem
+           vec3 cupRim = vec3(0.74, 0.44, 0.56);
+           vec3 jadeMid = vec3(0.24, 0.48, 0.32);
+           vec3 stemDeep = vec3(0.14, 0.32, 0.20);
+           col = mix(cupRim, jadeMid, smoothstep(0.0, 0.24, u));
+           col = mix(col, stemDeep, smoothstep(0.45, 0.98, u));
+           col *= mix(0.62, 1.08, clamp(wrap * 0.68 + diff * 0.32, 0.0, 1.0));
+           col += vec3(0.32, 0.16, 0.24) * bounce;
+           col += vec3(0.55, 0.84, 0.68) * rim * 0.22;
+         } else {
+           // Cupped Outer Sepals (jade-green base -> blush-rose tip)
+           aaCov = (1.0 - smoothstep(0.84, 1.0, abs(v))) * (1.0 - smoothstep(0.88, 1.0, u));
+           vec3 sepBase = vec3(0.22, 0.46, 0.30);
+           vec3 sepTip = vec3(0.78, 0.46, 0.62);
+           col = mix(sepBase, sepTip, smoothstep(0.35, 0.95, u));
+           col *= mix(0.64, 1.08, clamp(wrap * 0.68 + diff * 0.32, 0.0, 1.0));
+           col += vec3(0.26, 0.14, 0.20) * bounce;
+           col += vec3(0.92, 0.72, 0.84) * rim * 0.18;
+         }
+
+         col += vec3(1.0, 0.82, 0.42) * hoverGlow * 0.16;
+         col = (col / (vec3(1.0) + col * 0.22)) * 1.10;
+         col *= mix(1.0, 0.94, smoothstep(0.35, 1.0, uSettle));
+         col = clamp(col, 0.0, 1.0);
+
+         if (uAaPass < 0.5) {
+           if (aaCov < 0.82) discard;
+           gl_FragColor = vec4(col * reveal, reveal);
+         } else {
+           if (aaCov >= 0.82 || aaCov <= 0.02) discard;
+           float a = aaCov * reveal;
            gl_FragColor = vec4(col * a, a);
          }
+       }`
+    );
+
+    // 2.8 Dedicated Smooth Radial Glow Billboard Shader (eliminates gl_PointSize clamping pops)
+    const glowProg = compileProgram(
+      `precision highp float;
+       attribute vec2 aQuad;
+       uniform vec3 uCamPos;
+       uniform mat3 uViewMat;
+       uniform vec4 uLens;
+       uniform vec2 uAim;
+       uniform float uSettle;
+       uniform vec4 uGlowCenter; // xyz: world center, w: world radius
+
+       varying vec2 vQuad;
+
+       void main() {
+         vec3 view = uViewMat * (uGlowCenter.xyz - uCamPos);
+         view.xy += aQuad * uGlowCenter.w;
+         float dep = max(0.35, view.z);
+         vec2 p = vec2((view.x * uLens.x) / uLens.y, view.y * uLens.x);
+         p.x += uAim.x * dep * mix(0.032, 0.018, uSettle);
+         p.y += uAim.y * dep * mix(0.020, 0.014, uSettle);
+         float zn = ((dep - 0.35) / 78.0) * 2.0 - 1.0;
+         gl_Position = vec4(p, zn * dep, dep);
+         vQuad = aQuad;
+       }`,
+      `precision mediump float;
+       uniform vec4 uGlowColorA; // rgb: inner col, a: opacity
+       uniform vec4 uGlowColorB; // rgb: outer col, a: sharpness
+
+       varying vec2 vQuad;
+
+       void main() {
+         float r2 = dot(vQuad, vQuad);
+         if (r2 >= 1.0) discard;
+         float edgeFade = smoothstep(1.0, 0.12, r2);
+         float inner = exp(-r2 * uGlowColorB.a);
+         float outer = exp(-r2 * 3.4);
+         vec3 col = mix(uGlowColorB.rgb, uGlowColorA.rgb, clamp(inner * 1.15, 0.0, 1.0));
+         float a = (outer * 0.52 + inner * 0.48) * edgeFade * uGlowColorA.a;
+         gl_FragColor = vec4(col * a, a);
        }`
     );
 
@@ -877,11 +1187,13 @@ export function createLotusScene(canvas, options) {
        attribute vec4 aStyle;
        attribute vec4 aExtra;
 
-       uniform vec4 uCamera;
+       uniform vec3 uCamPos;
+       uniform mat3 uViewMat;
        uniform vec4 uLens;
        uniform vec4 uAction;   // x: time, y: bloom, z: flyMix, w: mouseActive
-       uniform vec2 uState;    // x: settle, y: aspect
+       uniform vec3 uState;    // x: settle, y: aspect, z: diveMix
        uniform vec2 uAim;
+       uniform vec2 uOverlay;
 
        varying vec4 vBot;
        varying vec4 vColor;
@@ -898,7 +1210,7 @@ export function createLotusScene(canvas, options) {
          float tile = aStyle.x;
          float seed = aStyle.y;
          float lit = aStyle.z;
-         float role = aStyle.w; // 0: meadow/dust/bug, 1: sakura stamen, 2: calyx pads, 3: lotus aura
+         float role = aStyle.w; // 0: meadow/dust/bug, 1: sakura stamen pollen, 2: calyx pads
 
          float x = aBase.x;
          float y = aBase.y;
@@ -908,39 +1220,32 @@ export function createLotusScene(canvas, options) {
          float blossom = step(15.9, tile);
          float dust = step(31.9, tile);
          float bug = step(32.9, tile);
-         float isAura = step(2.5, role);
          float isHeart = step(0.5, role) * (1.0 - step(1.5, role));
-         float isPad = step(1.5, role) * (1.0 - isAura);
+         float isPad = step(1.5, role);
 
          float ang = seed * 53.0;
          float defocus = 0.0;
          float opacity = 1.0;
          float spriteRot = ang * 0.35;
          float scatterGlow = 0.0;
+         float landedAmt = 0.0;
 
+         float dive = uState.z;
          if (isHeart > 0.5) {
-           float heartScale = 1.0 + bloom * 0.38 + settle * 0.14;
-           vec3 anchor = vec3(0.0, 0.42, 8.5 - bloom * 0.85);
+           float bloomLift = smoothstep(0.0, 1.0, bloom) * 2.10;
+           float heartScale = 1.0 + bloom * 0.40 + settle * 0.08;
+           vec3 anchor = vec3(0.0, 0.42 + bloomLift, 8.5);
            float hReveal = smoothstep(0.24, 0.88, bloom);
-           float lx = aBase.x * (0.45 + 0.65 * hReveal) * heartScale + 0.025 * sin(t * 1.4 + ang);
-           float ly = (0.28 + 0.52 * bloom + aBase.y * (0.55 + 0.45 * hReveal)) * heartScale + 0.02 * cos(t * 1.1 + ang);
-           float lz = aExtra.w * (0.45 + 0.65 * hReveal) * heartScale;
+           float lx = aBase.x * (0.65 + 0.85 * hReveal) * heartScale + 0.04 * sin(t * 1.3 + ang);
+           float ly = (0.72 + 0.78 * bloom + aBase.y * (0.55 + 0.45 * hReveal)) * heartScale + 0.03 * cos(t * 1.0 + ang);
+           float lz = aExtra.w * (0.65 + 0.85 * hReveal) * heartScale;
            x = anchor.x + lx;
            y = anchor.y + ly;
            z = anchor.z + lz;
-           opacity = hReveal * 0.92 * (1.0 - settle * 0.78);
+           opacity = hReveal * mix(0.75, 0.65, dive) * (0.45 + 0.55 * sin(t * 1.8 + ang) * 0.5 + 0.5);
            spriteRot = ang * 0.4 + t * 0.1;
-           scatterGlow = hReveal * 0.48 * (1.0 - settle * 0.75);
-           defocus = mix(0.0, 0.92, settle);
-         } else if (isAura > 0.5) {
-           float auraScale = 1.0 + bloom * 0.34;
-           vec3 anchor = vec3(0.0, 0.42, 8.5 - bloom * 0.85);
-           x = anchor.x + aBase.x * (0.95 + 0.55 * bloom) * auraScale;
-           y = anchor.y + aBase.y * (1.0 - 0.12 * bloom) * auraScale;
-           z = anchor.z + aExtra.w;
-           opacity = (0.11 + 0.08 * bloom) * (1.0 - settle * 0.48);
-           spriteRot = 0.0;
-           defocus = 0.0;
+           scatterGlow = hReveal * 0.48 * (1.0 - settle * 0.35);
+           defocus = mix(0.0, 0.25, settle);
          } else {
            float gust = sin(t * 1.05 - z * 0.26 + x * 0.30) + 0.36 * sin(t * 0.62 + x * 0.52 + z * 0.18);
            float flex = mix(0.065, 0.145, blossom) * (0.76 + 0.32 * seed);
@@ -961,61 +1266,123 @@ export function createLotusScene(canvas, options) {
            if (isPad < 0.5) {
              float radialAngle = aExtra.x;
              float liftWeight = aExtra.z;
-             float frontMask = 1.0 - smoothstep(4.5, 8.2, aBase.z);
-             float centerCorridor = exp(-aBase.x * aBase.x * 0.35) * frontMask;
-             float partDir = (aBase.x + (seed - 0.5) * 0.18) >= 0.0 ? 1.0 : -1.0;
-             float hoverBob = settle * (0.14 * sin(t * 0.85 + radialAngle * 2.0) + 0.08 * cos(t * 0.55 + seed * 12.0));
-             float rise = (fly * (0.28 + blossom * 2.55) + hoverBob * (0.35 + blossom * 0.65)) * liftWeight;
-             x += cos(radialAngle + t * 0.14) * rise * (0.78 + seed * 1.25) + partDir * fly * blossom * centerCorridor * (1.35 + seed * 0.85);
-             y += rise * (0.94 + seed * 1.32) * (1.0 - centerCorridor * 0.64);
-             z += sin(radialAngle + t * 0.12) * rise * 0.42 * (1.0 - frontMask * 0.78);
-             scatterGlow = fly * blossom * 0.68 * (1.0 - settle * 0.65);
+             float isLander = step(9.5, aExtra.w) * blossom * (1.0 - dust);
+
+             if (isLander > 0.5) {
+               float rawCode = aExtra.w - 10.0;
+               float lRingNorm = step(50.0, rawCode) * 0.5;
+               float uCode = rawCode - lRingNorm * 200.0;
+               float uLand = floor(uCode) / 50.0;
+               float vLand = clamp((fract(uCode) - 0.5) * 2.0, -0.4, 0.4);
+               float lPetalAz = aExtra.y;
+
+               float rbL = smoothstep(lRingNorm * 0.18, lRingNorm * 0.18 + 0.78, bloom);
+               float lLen = mix(3.65, 3.40, lRingNorm * 2.0);
+               float lMaxW = mix(1.92, 1.76, lRingNorm * 2.0);
+               float lBreath = sin(t * 0.85 + lPetalAz * 2.0 + uLand) * mix(0.008, 0.020, rbL);
+               float lTilt = mix(1.24, 0.76, lRingNorm) + lBreath + dive * 0.04 * (1.0 - lRingNorm * 0.3);
+               float lAlong = uLand * lLen * (1.0 - 0.08 * rbL);
+               float lBaseO = mix(0.48, 0.36, lRingNorm);
+               float lBaseYO = mix(0.18, 0.38, lRingNorm);
+               float lBelly = sin(uLand * 3.14159265) * mix(0.34, 0.18, lRingNorm);
+               float lTipLift = pow(uLand, 2.1) * mix(0.42, 0.30, lRingNorm);
+               float lWOpen = (0.62 * pow(1.0 - uLand, 1.75) + sin(pow(uLand, 0.68) * 3.14159265)) * (1.0 - 0.10 * uLand * uLand);
+               float lSpoon = mix(0.11, 0.065, lRingNorm) * lWOpen * (1.0 - vLand * vLand);
+               float lShingle = vLand * lWOpen * (0.078 + 0.018 * rbL);
+               float lROpen = lBaseO + sin(lTilt) * lAlong + cos(lTilt) * (lBelly + lSpoon + lShingle);
+               float lYOpen = lBaseYO + cos(lTilt) * lAlong - sin(lTilt) * (lBelly + lSpoon + lShingle) + lTipLift;
+               float lTang = vLand * lWOpen * (lMaxW * 0.5) * (1.22 + 0.16 * rbL) * rbL;
+               float lCa = cos(lPetalAz);
+               float lSa = sin(lPetalAz);
+               float lScale = 1.0 + rbL * 0.40 + settle * 0.08;
+               float lAnchorY = 0.42 + smoothstep(0.0, 1.0, bloom) * 2.10;
+
+               float landX = (lROpen * lCa - lTang * lSa) * lScale - cos(lTilt) * lCa * 0.18;
+               float landY = lAnchorY + (lYOpen + settle * 0.04 * uLand) * lScale + sin(lTilt) * 0.18;
+               float landZ = 8.5 + (lROpen * lSa + lTang * lCa) * lScale - cos(lTilt) * lSa * 0.18;
+
+               float pOpen = smoothstep(0.0, 0.95, bloom);
+               float flyAbove = max(0.0, fly - 0.22 * settle);
+               float softAir = (flyAbove * flyAbove) / (flyAbove + 0.16);
+               landedAmt = smoothstep(0.08, 0.90, settle) * (1.0 - smoothstep(0.01, 0.28, flyAbove));
+
+               float swirlAmt = softAir * liftWeight;
+               float calmWind = 1.0 - landedAmt;
+               float windY = flex * (0.26 * cos(t * 1.05 - aBase.z * 0.26 + aBase.x * 0.30) - 0.15 * gust * gust);
+               float baseX = mix(aBase.x + (gust * flex + 0.02 * sin(t * 1.65 + ang)) * calmWind, landX, pOpen);
+               float baseZ = mix(aBase.z, landZ, pOpen);
+               float baseY = mix(aBase.y + windY * calmWind, landY, pOpen);
+               x = baseX + cos(radialAngle + t * 0.12) * swirlAmt * 0.75;
+               z = baseZ + sin(radialAngle + t * 0.10) * swirlAmt * 0.22;
+               y = baseY + swirlAmt * (3.2 + seed * 1.3);
+               scatterGlow = softAir * 0.72;
+             } else {
+               float frontMask = 1.0 - smoothstep(4.5, 8.2, aBase.z);
+               float centerCorridor = exp(-aBase.x * aBase.x * 0.35) * frontMask;
+               float partDir = (aBase.x + (seed - 0.5) * 0.18) >= 0.0 ? 1.0 : -1.0;
+               float hoverBob = settle * (0.14 * sin(t * 0.85 + radialAngle * 2.0) + 0.08 * cos(t * 0.55 + seed * 12.0));
+               float rise = (fly * (0.28 + blossom * 2.45) + hoverBob * (0.35 + blossom * 0.65)) * liftWeight;
+               float yLiftMult = (1.05 + seed * 1.15) * (1.0 - centerCorridor * 0.55);
+
+               // Tuck resting baseline gently beneath the open lotus bowl during launch (driven only by bloom),
+               // so the fall curve itself decelerates monotonically to the ground with ZERO end-of-fall jerk.
+               float rBase = length(vec2(aBase.x, aBase.z - 8.5));
+               float underMask = (1.0 - smoothstep(4.8, 7.2, rBase)) * smoothstep(0.10, 0.85, bloom);
+               float uApprox = clamp((rBase - 0.9) / 4.6, 0.0, 1.0);
+               float lotusFloorY = 0.42 + smoothstep(0.0, 1.0, bloom) * 2.10;
+               float restLiftY = (0.22 * (0.28 + blossom * 2.45)) * liftWeight * yLiftMult;
+               float underCeil = lotusFloorY - 0.56 + uApprox * uApprox * 1.56 - restLiftY;
+               float diffU = underCeil - y;
+               float smoothMinY = underCeil - 0.5 * (diffU + sqrt(diffU * diffU + 0.36));
+               y = mix(y, smoothMinY, underMask);
+
+               x += cos(radialAngle + t * 0.12) * rise * 0.65 + partDir * fly * blossom * centerCorridor * (1.25 + seed * 0.55);
+               y += rise * yLiftMult;
+               z += sin(radialAngle + t * 0.10) * rise * 0.18 * (1.0 - frontMask * 0.85);
+               scatterGlow = fly * blossom * 0.72 * (1.0 - settle * 0.55);
+             }
            } else {
-             y -= settle * 0.28;
-             opacity = 1.0 - settle * 0.72;
+             y -= bloom * 0.22;
+             opacity = 1.0 - smoothstep(0.15, 0.75, bloom);
            }
 
            spriteRot = ang * 0.28 + gust * mix(0.048, 0.12, blossom) + sin(t * 1.1 + ang) * 0.02 + fly * 0.52;
+           if (landedAmt > 0.001) {
+             spriteRot = mix(spriteRot, aExtra.y * 0.65 + seed * 6.28318 + sin(t * 0.85 + aExtra.y * 2.0) * 0.03, landedAmt);
+           }
          }
 
-         float cx = x - uCamera.x;
-         float cy = y - uCamera.y;
-         float dep = z - uCamera.z;
+         vec3 view = uViewMat * (vec3(x, y, z) - uCamPos);
+         float dep = view.z;
 
-         if (isHeart < 0.5 && isAura < 0.5) {
+         if (isHeart < 0.5) {
            float nearBlur = (1.0 - smoothstep(1.0, 2.8, dep)) * 0.62;
            float farBlur = smoothstep(32.0, 62.0, dep) * 0.72;
-           defocus = max(max(nearBlur, farBlur), settle * (1.0 - blossom * 0.14) * 0.92);
-            if (isPad < 0.5) {
-              float nearAlpha = smoothstep(0.55, 1.28, dep);
-              float farHorizon = 1.0 - smoothstep(54.0, 66.0, dep);
-              opacity *= nearAlpha * farHorizon * (1.0 - settle * mix(0.68, 0.52, blossom));
-            }
-          }
+           float bgBokeh = smoothstep(12.0, 26.0, dep) * smoothstep(0.25, 0.95, settle) * 0.64;
+           defocus = max(max(nearBlur, farBlur), bgBokeh) * (1.0 - landedAmt);
+           float nearAlpha = smoothstep(mix(0.55, 1.35, dive), mix(1.28, 3.0, dive), dep);
+           float farHorizon = 1.0 - smoothstep(62.0, 76.0, dep);
+           opacity *= nearAlpha * farHorizon;
+         }
 
-          vec2 p = vec2((cx * uLens.x) / uLens.y, cy * uLens.x + dep * uCamera.w);
-          p.x += uAim.x * dep * 0.032;
-          p.y += uAim.y * dep * 0.020;
+          vec2 p = vec2((view.x * uLens.x) / uLens.y, view.y * uLens.x);
+          p.x += uAim.x * dep * mix(0.032, 0.018, settle);
+          p.y += uAim.y * dep * mix(0.020, 0.014, settle);
 
           vec2 diff = p / max(0.1, dep) - uAim;
           diff.x *= uLens.y;
           float clos = exp(-dot(diff, diff) * 14.0) * uAction.w;
-          vec2 push = diff * clos * 0.12 * dep;
+          vec2 push = diff * clos * 0.12 * dep * (1.0 - dive * 0.7) * (1.0 - landedAmt);
           push.x /= uLens.y;
           p += push;
 
-          gl_Position = vec4(p, dep * 1.0017 - 0.18, dep);
+          float zn = ((dep - 0.35) / 78.0) * 2.0 - 1.0;
+          gl_Position = vec4(p, zn * dep, dep);
 
           float sizePx = (ptSize * uLens.z * uLens.x * 0.5) / max(0.65, dep);
-          float flyShrink = 1.0 - fly * blossom * (1.0 - isHeart) * (1.0 - isAura) * 0.22;
-          float finalPtSize = sizePx * flyShrink;
+          float flyShrink = 1.0 - fly * blossom * (1.0 - isHeart) * 0.22;
+          float finalPtSize = sizePx * flyShrink * mix(1.0, 0.72, landedAmt);
           gl_PointSize = clamp(finalPtSize, 1.0, uLens.w);
-
-          if (isHeart < 0.5 && isAura < 0.5) {
-            float farSettleFade = 1.0 - smoothstep(0.16, 0.88, settle) * smoothstep(18.0, 32.0, dep);
-            float tinySettleFade = 1.0 - smoothstep(0.30, 0.88, settle) * (1.0 - smoothstep(1.4, 3.4, finalPtSize));
-            opacity *= farSettleFade * tinySettleFade;
-          }
 
           float farFade = 1.0 - smoothstep(14.0, 56.0, dep) * mix(0.58, 0.28, max(blossom, isHeart));
           float backLift = smoothstep(10.0, 32.0, dep) * mix(0.06, 0.12, blossom);
@@ -1023,18 +1390,23 @@ export function createLotusScene(canvas, options) {
           float bright = (0.30 + 0.70 * farFade + backLift) * lit * mix(0.76, 1.02, max(blossom, isHeart));
           bright *= mix(1.0, hillTex, smoothstep(10.0, 20.0, dep));
           bright *= 1.0 + clos * 0.30 * max(blossom, isHeart);
-          bright *= mix(1.0, 0.44, settle);
+          bright *= mix(1.0, 0.76, settle);
+          bright = mix(bright, (0.94 + 0.14 * lit), landedAmt);
 
           if (bug > 0.5) {
             float beat = 0.5 + 0.5 * sin(t * (1.6 + seed * 0.85) + ang);
-            opacity = (0.18 + 0.82 * smoothstep(0.24, 0.94, beat)) * (1.0 - smoothstep(16.0, 36.0, dep)) * (1.0 - smoothstep(0.20, 0.88, settle) * 0.75);
+            opacity = (0.18 + 0.82 * smoothstep(0.24, 0.94, beat)) * (1.0 - smoothstep(16.0, 36.0, dep));
           }
+          if (uOverlay.y > 0.5) {
+            if (isPad > 0.5 || dep > 18.5) opacity = 0.0;
+            else if (blossom < 0.5) opacity *= 1.0 - smoothstep(0.08, 0.35, bloom);
+          }
+          opacity *= uOverlay.x;
 
           float ptMargin = (finalPtSize / max(1.0, uLens.z)) * 1.15;
           float clipX = dep * (1.06 + ptMargin / max(0.35, uLens.y));
           float clipY = dep * (1.06 + ptMargin);
-          // Cull off-screen or fully faded-out sprites without any sudden pop
-          if (dep < 0.55 || dep > 68.0 || opacity < 0.004 || abs(p.x) > clipX || abs(p.y) > clipY) {
+          if (dep < 0.55 || dep > 77.0 || opacity < 0.004 || abs(p.x) > clipX || abs(p.y) > clipY) {
             gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
             gl_PointSize = 0.0;
           }
@@ -1049,7 +1421,7 @@ export function createLotusScene(canvas, options) {
           vDepthFx = vec2(
             smoothstep(42.0, 74.0, dep) * 0.18,
             smoothstep(11.0, 44.0, dep)
-          ) * (1.0 - dust) * (1.0 - bug) * (1.0 - isHeart) * (1.0 - isAura);
+          ) * (1.0 - dust) * (1.0 - bug) * (1.0 - isHeart);
           vTileInfo = vec3(tileCol, tileRow, isBlue);
         }`,
       `precision mediump float;
@@ -1063,14 +1435,6 @@ export function createLotusScene(canvas, options) {
        void main() {
          vec2 q = gl_PointCoord - 0.5;
          float q2 = dot(q, q);
-         if (vBot.x > 33.9) {
-           float glow = exp(-q2 * 16.0) * vColor.w;
-           if (glow < 0.004) discard;
-           vec3 auraCol = mix(vec3(0.98, 0.56, 0.77), vec3(1.0, 0.80, 0.91), exp(-q2 * 36.0));
-           gl_FragColor = vec4(auraCol * glow, glow * 0.38);
-           return;
-         }
-
          if (vBot.x > 32.9) {
            float core = exp(-q2 * 310.0);
            float aura = exp(-q2 * 24.0);
@@ -1094,13 +1458,14 @@ export function createLotusScene(canvas, options) {
 
          vec2 loc = (vTileInfo.xy + uv) / 8.0;
 
+         float blurMix = smoothstep(0.22, 0.62, vBot.y);
          vec4 texel;
-         if (vBot.y < 0.22) {
+         if (blurMix <= 0.004) {
            texel = texture2D(uImage, loc);
-         } else if (vBot.y > 0.68) {
+         } else if (blurMix >= 0.996) {
            texel = texture2D(uImage, loc + vec2(0.0, 0.5));
          } else {
-           texel = mix(texture2D(uImage, loc), texture2D(uImage, loc + vec2(0.0, 0.5)), vBot.y);
+           texel = mix(texture2D(uImage, loc), texture2D(uImage, loc + vec2(0.0, 0.5)), blurMix);
          }
 
          if (texel.a < 0.015) discard;
@@ -1113,7 +1478,7 @@ export function createLotusScene(canvas, options) {
          float bloomGlow = vBot.w * (0.30 + vColor.y * 0.34 + vDepthFx.y * 0.32);
          vec3 glowCol = mix(vec3(0.34, 0.14, 0.24), vec3(0.14, 0.26, 0.40), isBlue);
          rgb += glowCol * texel.a * bloomGlow * min(vColor.x, 1.15);
-         rgb += vec3(0.11, 0.01, 0.06) * texel.a * vDepthFx.y * (1.0 - vBot.w);
+         rgb += vec3(0.04, 0.01, 0.03) * texel.a * vDepthFx.y * (1.0 - vBot.w);
          if (vBot.w > 0.5) {
            vec3 straight = rgb / max(texel.a, 0.001);
            straight = (straight / (vec3(1.0) + straight * 0.28)) * 1.14;
@@ -1179,20 +1544,43 @@ export function createLotusScene(canvas, options) {
       return 0.38 + wall + ridge + undul + lotusCradle + fgMound + farRise;
     }
 
-    function insideMeadowFrustum(x, z, allowRoot) {
-      if (z < 0.90 || z > 64.0) return false;
-      const maxX = Math.min(22.5, (z + 0.55) * 1.15);
-      if (Math.abs(x - valleyCourse(z)) > maxX) return false;
+    function surroundFloor(x, z) {
       const dx = x - SAKURA_X;
       const dz = z - SAKURA_Z;
-      const minR = allowRoot ? 0.45 : 1.15;
-      if (Math.hypot(dx, dz) < minR && z > 6.2 && z < 10.5) return false;
+      const r = Math.hypot(dx, dz);
+      const rise = Math.max(0, r - 3.0) * (0.24 + 0.085 * Math.min(1.0, r / 18.0));
+      const wave =
+        0.38 * S(dx * 0.42 + dz * 0.36) +
+        0.24 * C(dx * 0.68 - dz * 0.54) +
+        0.16 * S((dx - dz) * 0.25);
+      const cradle = -0.32 * Math.exp(-(r * r) / 7.5);
+      return 0.44 + rise + wave + cradle;
+    }
+
+    function inIntroCorridor(x, z) {
+      if (z < 1.15 || z > 58.0) return false;
+      const maxX = Math.min(20.0, (z + 0.45) * 1.04);
+      return Math.abs(x - valleyCourse(z)) <= maxX;
+    }
+
+    function insideMeadowFrustum(x, z, allowRoot) {
+      const dx = x - SAKURA_X;
+      const dz = z - SAKURA_Z;
+      const rOrbit = Math.hypot(dx, dz);
+      const minR = allowRoot ? 0.45 : 1.25;
+      if (rOrbit < minR && z > 6.2 && z < 10.5) return false;
+      if (rOrbit <= 36.0) return true;
+      if (z < 0.90 || z > 60.0) return false;
+      const maxX = Math.min(22.0, (z + 0.55) * 1.15);
+      if (Math.abs(x - valleyCourse(z)) > maxX) return false;
       return true;
     }
 
     function insideStaticView(x, y, z, size) {
+      const rOrbit = Math.hypot(x - SAKURA_X, z - SAKURA_Z);
+      if (rOrbit <= 36.0) return true;
       const dep = z + 0.35;
-      if (dep < 0.65 || dep > 66.0) return false;
+      if (dep < 0.65 || dep > 62.0) return false;
       const rad = (size * 1.72 * 0.5) / Math.max(0.65, dep);
       const nxWide = (x * 1.72) / (2.15 * dep);
       const ny = ((y - 2.58) * 1.72) / dep - 0.02;
@@ -1201,14 +1589,180 @@ export function createLotusScene(canvas, options) {
       return true;
     }
 
+    function buildStamenMeshBuffer() {
+      const domeRings = 16;
+      const domeSegs = 32;
+      const domeVerts = (domeRings + 1) * (domeSegs + 1);
+      const domeIndices = domeRings * domeSegs * 6;
+
+      const filRings = [
+        { count: 32, baseR: 0.58, spanR: 0.36, tipH: 0.90, rNorm: 0.0 },
+        { count: 40, baseR: 0.68, spanR: 0.44, tipH: 0.78, rNorm: 0.5 },
+        { count: 48, baseR: 0.78, spanR: 0.52, tipH: 0.66, rNorm: 1.0 },
+      ];
+      const filUSegs = 9;
+      const filVertsPer = (filUSegs + 1) * 2;
+      const filIndicesPer = filUSegs * 6;
+      const totalFils = filRings.reduce((s, r) => s + r.count, 0);
+
+      const calyxRings = 14;
+      const calyxSegs = 28;
+      const calyxVerts = (calyxRings + 1) * (calyxSegs + 1);
+      const calyxIndices = calyxRings * calyxSegs * 6;
+
+      const sepalCount = 8;
+      const sepU = 10;
+      const sepV = 6;
+      const sepVertsPer = (sepU + 1) * (sepV + 1);
+      const sepIndicesPer = sepU * sepV * 6;
+
+      const totalVerts = domeVerts + totalFils * filVertsPer + calyxVerts + sepalCount * sepVertsPer;
+      const totalIndices = domeIndices + totalFils * filIndicesPer + calyxIndices + sepalCount * sepIndicesPer;
+      const data = new Float32Array(totalVerts * 8);
+      const indices = new Uint16Array(totalIndices);
+      let vc = 0;
+      let ic = 0;
+      let vBase = 0;
+
+      function pushStVert(u, v, kind, rNorm, az, g1, g2, g3) {
+        data[vc++] = u;
+        data[vc++] = v;
+        data[vc++] = kind;
+        data[vc++] = rNorm;
+        data[vc++] = az;
+        data[vc++] = g1;
+        data[vc++] = g2;
+        data[vc++] = g3;
+      }
+
+      // 1. Sculpted golden-rose receptacle chalice dome (nested strictly inside baseO = 0.36)
+      const domeRad = 0.76;
+      const domeH = 0.82;
+      const domeBaseY = 0.52;
+      for (let ir = 0; ir <= domeRings; ir++) {
+        const u = ir / domeRings;
+        for (let is = 0; is <= domeSegs; is++) {
+          const vAng = (is / domeSegs) * TAU;
+          pushStVert(u, vAng, 0.0, 0.0, 0.0, domeBaseY, domeRad, domeH);
+        }
+      }
+      const dCols = domeSegs + 1;
+      for (let ir = 0; ir < domeRings; ir++) {
+        for (let is = 0; is < domeSegs; is++) {
+          const i00 = vBase + ir * dCols + is;
+          const i10 = vBase + (ir + 1) * dCols + is;
+          const i01 = i00 + 1;
+          const i11 = i10 + 1;
+          indices[ic++] = i00;
+          indices[ic++] = i10;
+          indices[ic++] = i11;
+          indices[ic++] = i00;
+          indices[ic++] = i11;
+          indices[ic++] = i01;
+        }
+      }
+      vBase += domeVerts;
+
+      // 2. Three concentric rings of arched 3D stamen filaments + glowing honey-gold anthers
+      for (let ri = 0; ri < filRings.length; ri++) {
+        const ring = filRings[ri];
+        const azShift = ri * 0.13;
+        for (let f = 0; f < ring.count; f++) {
+          const az = azShift + (TAU * f) / ring.count + (R() - 0.5) * 0.04;
+          const baseR = ring.baseR + (R() - 0.5) * 0.05;
+          const spanR = ring.spanR * (0.90 + R() * 0.20);
+          const tipH = ring.tipH * (0.88 + R() * 0.22);
+          for (let iu = 0; iu <= filUSegs; iu++) {
+            const u = iu / filUSegs;
+            pushStVert(u, -1.0, 1.0, ring.rNorm, az, baseR, spanR, tipH);
+            pushStVert(u, 1.0, 1.0, ring.rNorm, az, baseR, spanR, tipH);
+          }
+          for (let iu = 0; iu < filUSegs; iu++) {
+            const i00 = vBase + iu * 2;
+            const i01 = i00 + 1;
+            const i10 = i00 + 2;
+            const i11 = i00 + 3;
+            indices[ic++] = i00;
+            indices[ic++] = i10;
+            indices[ic++] = i11;
+            indices[ic++] = i00;
+            indices[ic++] = i11;
+            indices[ic++] = i01;
+          }
+          vBase += filVertsPer;
+        }
+      }
+
+      // 3. Sculpted botanical calyx cup & tapered jade-emerald stem (tucked underneath outer petals)
+      const chaliceR = 0.86;
+      const stemLen = 2.13;
+      for (let ir = 0; ir <= calyxRings; ir++) {
+        const u = ir / calyxRings;
+        for (let is = 0; is <= calyxSegs; is++) {
+          const vAng = (is / calyxSegs) * TAU;
+          pushStVert(u, vAng, 2.0, 0.0, 0.0, chaliceR, stemLen, 0.0);
+        }
+      }
+      const cCols = calyxSegs + 1;
+      for (let ir = 0; ir < calyxRings; ir++) {
+        for (let is = 0; is < calyxSegs; is++) {
+          const i00 = vBase + ir * cCols + is;
+          const i10 = vBase + (ir + 1) * cCols + is;
+          const i01 = i00 + 1;
+          const i11 = i10 + 1;
+          indices[ic++] = i00;
+          indices[ic++] = i10;
+          indices[ic++] = i11;
+          indices[ic++] = i00;
+          indices[ic++] = i11;
+          indices[ic++] = i01;
+        }
+      }
+      vBase += calyxVerts;
+
+      // 4. Eight cupped outer botanical sepals under outer petal gaps (kind = 3.0)
+      const sCols = sepV + 1;
+      for (let s = 0; s < sepalCount; s++) {
+        const az = 0.18 + Math.PI / 8 + (TAU * s) / sepalCount;
+        for (let iu = 0; iu <= sepU; iu++) {
+          const u = iu / sepU;
+          for (let iv = 0; iv <= sepV; iv++) {
+            const v = (iv / sepV) * 2 - 1;
+            pushStVert(u, v, 3.0, 0.0, az, 1.25, 0.62, 0.0);
+          }
+        }
+        for (let iu = 0; iu < sepU; iu++) {
+          for (let iv = 0; iv < sepV; iv++) {
+            const i00 = vBase + iu * sCols + iv;
+            const i10 = vBase + (iu + 1) * sCols + iv;
+            const i01 = i00 + 1;
+            const i11 = i10 + 1;
+            indices[ic++] = i00;
+            indices[ic++] = i10;
+            indices[ic++] = i11;
+            indices[ic++] = i00;
+            indices[ic++] = i11;
+            indices[ic++] = i01;
+          }
+        }
+        vBase += sepVertsPer;
+      }
+
+      return {
+        buffer: makeBuffer(data),
+        indexBuffer: makeElementBuffer(indices),
+        indexCount: totalIndices,
+      };
+    }
+
     function buildSakuraMeshBuffer() {
       const tiers = [
-        { count: 8, ringNorm: 0.0, len: 3.50, maxW: 1.64, azOffset: 0.18, ringIdx: 0 },
-        { count: 7, ringNorm: 0.5, len: 3.32, maxW: 1.46, azOffset: 0.18 + Math.PI / 7, ringIdx: 1 },
-        { count: 6, ringNorm: 1.0, len: 3.04, maxW: 1.24, azOffset: 0.18 + Math.PI / 3.5, ringIdx: 2 },
+        { count: 8, ringNorm: 0.0, len: 3.65, maxW: 1.92, azOffset: 0.18, ringIdx: 0 },
+        { count: 8, ringNorm: 0.5, len: 3.40, maxW: 1.76, azOffset: 0.18 + Math.PI / 8, ringIdx: 1 },
+        { count: 8, ringNorm: 1.0, len: 3.12, maxW: 1.56, azOffset: 0.18 + Math.PI / 4, ringIdx: 2 },
       ];
-      const U_SEGS = 14;
-      const V_SEGS = 10;
+      const U_SEGS = 18;
+      const V_SEGS = 12;
       const uCols = U_SEGS + 1;
       const vRows = V_SEGS + 1;
       const totalPetals = tiers.reduce((sum, t) => sum + t.count, 0);
@@ -1233,10 +1787,10 @@ export function createLotusScene(canvas, options) {
 
       for (const tier of tiers) {
         for (let p = 0; p < tier.count; p++) {
-          const az = tier.azOffset + (TAU * p) / tier.count + (R() - 0.5) * 0.015;
+          const az = tier.azOffset + (TAU * p) / tier.count + (R() - 0.5) * 0.003;
           const pSeed = R();
-          const len = tier.len * (0.98 + R() * 0.04);
-          const maxW = tier.maxW * (0.98 + R() * 0.04);
+          const len = tier.len * (0.992 + R() * 0.016);
+          const maxW = tier.maxW * (0.992 + R() * 0.016);
 
           for (let iu = 0; iu <= U_SEGS; iu++) {
             const u = iu / U_SEGS;
@@ -1280,13 +1834,87 @@ export function createLotusScene(canvas, options) {
 
     let atlasTex = null;
     let particleBuf = null;
-    let particleZs = null;
+    let glowQuadBuf = null;
+    let meadowEbo = null;
+    let coreEbo = null;
+    let meadowCount = 0;
+    let meadowFlowerStart = 0;
+    let coreCount = 0;
+    let meadowPosX = null;
+    let meadowPosY = null;
+    let meadowPosZ = null;
+    let meadowLayerBias = null;
+    let meadowBandOffset = null;
+    let meadowOrigIdx = null;
+    let sortedMeadow = null;
+    let depthKeys = null;
+    let tempKeys = null;
+    let tempIdx = null;
+    const bucketCounts = new Int32Array(256);
+    const bucketOffsets = new Int32Array(256);
+    let hasSortedOnce = false;
+    let lastSortedYaw = 0;
+    let lastSortedElev = 0;
+    let lastSortedDist = 0;
     let flowerBounds = null;
     let foliageTotal = 0;
     let flowerTotal = 0;
     let particleCount = 0;
-    let sakuraSplitIndex = 0;
     let sakuraMesh = null;
+    let stamenMesh = null;
+    let diveTarget = opts.initialOpen ? 1 : 0;
+    let diveMix = diveTarget;
+    let tabYawTarget = 0;
+    let tabYawMix = 0;
+
+    function sortMeadowByCamera(camX, camY, camZ, viewMat) {
+      if (!meadowEbo || meadowCount === 0) return;
+      const fx = viewMat[2];
+      const fy = viewMat[5];
+      const fz = viewMat[8];
+      const depthScale15 = 32767 / 84.0;
+
+      bucketCounts.fill(0);
+      for (let k = 0; k < meadowCount; k++) {
+        const dep = (meadowPosX[k] - camX) * fx + (meadowPosY[k] - camY) * fy + (meadowPosZ[k] - camZ) * fz - meadowLayerBias[k];
+        let d15 = 32767 - (((dep + 4.0) * depthScale15) | 0);
+        if (d15 < 0) d15 = 0;
+        else if (d15 > 32767) d15 = 32767;
+        const k16 = meadowBandOffset[k] | d15;
+        depthKeys[k] = k16;
+        bucketCounts[k16 & 255]++;
+      }
+
+      let acc = 0;
+      for (let b = 0; b < 256; b++) {
+        bucketOffsets[b] = acc;
+        acc += bucketCounts[b];
+      }
+      for (let k = 0; k < meadowCount; k++) {
+        const k16 = depthKeys[k];
+        const dst = bucketOffsets[k16 & 255]++;
+        tempIdx[dst] = meadowOrigIdx[k];
+        tempKeys[dst] = k16;
+      }
+
+      bucketCounts.fill(0);
+      for (let k = 0; k < meadowCount; k++) {
+        bucketCounts[tempKeys[k] >>> 8]++;
+      }
+      acc = 0;
+      for (let b = 0; b < 256; b++) {
+        bucketOffsets[b] = acc;
+        acc += bucketCounts[b];
+      }
+      for (let k = 0; k < meadowCount; k++) {
+        const dst = bucketOffsets[tempKeys[k] >>> 8]++;
+        sortedMeadow[dst] = tempIdx[k];
+      }
+
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, meadowEbo);
+      gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, 0, sortedMeadow);
+      hasSortedOnce = true;
+    }
 
     function updateSceneStats(focal, aspect) {
       if (!flowerBounds) return;
@@ -1311,18 +1939,6 @@ export function createLotusScene(canvas, options) {
       canvas.dataset.spritesTotal = String(particleCount);
     }
 
-    function findSplitIndex(splitZ) {
-      if (!particleZs) return sakuraSplitIndex;
-      let lo = 0;
-      let hi = particleCount;
-      while (lo < hi) {
-        const mid = (lo + hi) >>> 1;
-        if (particleZs[mid] >= splitZ) lo = mid + 1;
-        else hi = mid;
-      }
-      return lo;
-    }
-
     let raf = 0;
     let lastNow = 0;
     let lastSkyNow = 0;
@@ -1344,8 +1960,12 @@ export function createLotusScene(canvas, options) {
     let lastPointerMoveMs = 0;
     let windowBlurred = false;
     let pendingFlyDown = false;
+    let flyDownTimer = 0;
     let hasPaintedOnce = false;
     let frameTicks = 0;
+    let smoothDt = 1 / 60;
+    let lastStatsW = 0;
+    let lastStatsH = 0;
 
     async function buildScene() {
       const bokehBlurPx = Math.max(6, Math.round(TILE_SIZE * 0.055));
@@ -1373,27 +1993,29 @@ export function createLotusScene(canvas, options) {
       gl.generateMipmap(gl.TEXTURE_2D);
 
       sakuraMesh = buildSakuraMeshBuffer();
+      stamenMesh = buildStamenMeshBuffer();
 
-      // 1. Lush Dark-Green Siltora V-Valley Foliage Carpet + Foreground Mossy Mound + Targeted Gap Grass
+      // 1. Lush Dark-Green Siltora V-Valley Foliage Carpet + Foreground Mossy Mound + 360 Amphitheater Surround
       const pushGrass = (x, y, z, size, litScale, roleVal) => {
         if (!insideStaticView(x, y, z, size)) return;
+        if (R() < 0.10) return;
         const tile = R() < 0.58 ? 8 + Math.floor(R() * 4) : Math.floor(R() * 8);
         const ang = Math.atan2(z - SAKURA_Z, x - SAKURA_X);
         const r = Math.hypot(x - SAKURA_X, z - SAKURA_Z);
         pushParticle(x, y, z, size, tile, R(), litScale, roleVal, ang, r, 0.52 + R() * 0.72, 0.0);
       };
 
-      const foliageCount = lowEnd ? 5200 : 7000;
+      const foliageCount = lowEnd ? 4050 : 5420;
       for (let i = 0; i < foliageCount; i++) {
         if (!(i & 511)) await yieldSlice();
-        const z = 0.95 + Math.pow(R(), 1.12) * 60.5;
+        const z = 0.95 + Math.pow(R(), 1.12) * 51.0;
         const side = R() < 0.5 ? -1 : 1;
-        const maxOff = Math.min(22.5, (z + 0.55) * 1.15);
+        const maxOff = Math.min(side > 0 ? 18.8 : 20.5, (z + 0.55) * (side > 0 ? 0.98 : 1.06));
         const off = side * Math.pow(R(), 1.02) * maxOff;
         const x = off + valleyCourse(z);
         if (!insideMeadowFrustum(x, z, true)) continue;
 
-        const y = meadowFloor(x, z) - 0.04 + R() * 0.16;
+        const y = meadowFloor(x, z) - 0.14 + R() * 0.16;
         const patch = 0.5 + 0.5 * S(off * 1.18 + S(z * 0.28) * 1.8) * C(z * 0.34 + off * 0.38);
         const lit = 0.28 + 0.92 * Math.pow(patch, 1.65) + 0.22 * R();
         const depthMul = z < 2.4 ? 0.86 : z > 14 ? 1.0 + (z - 14) * 0.032 : 1.0;
@@ -1457,8 +2079,56 @@ export function createLotusScene(canvas, options) {
       for (let i = 0; i < (lowEnd ? 120 : 180); i++) {
         const z = 11.5 + R() * 9.5;
         const x = (R() * 2 - 1) * 5.20 + valleyCourse(z);
-        const y = meadowFloor(x, z) + 0.65 + R() * 0.95;
+        const y = meadowFloor(x, z) + 0.06 + R() * 0.24;
         pushGrass(x, y, z, 0.72 + R() * 0.92, 0.46 + R() * 0.68, 0.0);
+      }
+
+      // Dense lower-foreground grass carpet sealing every bottom edge gap on initial POV
+      const lowerFgGrass = lowEnd ? 280 : 450;
+      for (let i = 0; i < lowerFgGrass; i++) {
+        const z = 1.05 + R() * 1.75;
+        const x = (R() * 2 - 1) * 4.20 + valleyCourse(z);
+        const y = meadowFloor(x, z) - 0.22 + R() * 0.28;
+        pushGrass(x, y, z, 0.72 + R() * 0.88, 0.42 + R() * 0.66, 0.0);
+      }
+
+      // Uniform 360-degree area-distributed foliage blanket surrounding the intro valley (covers all tab views)
+      const surroundGrassCount = lowEnd ? 2600 : 4200;
+      const rMinSq = 4.2 * 4.2;
+      const rSpanSq = 34.0 * 34.0 - rMinSq;
+      for (let i = 0; i < surroundGrassCount; i++) {
+        if (!(i & 255)) await yieldSlice();
+        const theta = R() * TAU;
+        const rr = Math.sqrt(rMinSq + R() * rSpanSq);
+        const x = SAKURA_X + C(theta) * rr;
+        const z = SAKURA_Z + S(theta) * rr;
+        if (inIntroCorridor(x, z) || !insideMeadowFrustum(x, z, false)) continue;
+        const y = surroundFloor(x, z) - 0.04 + R() * 0.26;
+        const size = (0.76 + R() * 1.08) * (1.0 + Math.max(0, rr - 10) * 0.032);
+        pushGrass(x, y, z, size, 0.36 + 0.74 * R(), 0.0);
+      }
+
+      // Dedicated grass blanket directly behind the first POV (covers left screen of #contact & #works)
+      const rearIntroGrass = lowEnd ? 900 : 1500;
+      for (let i = 0; i < rearIntroGrass; i++) {
+        if (!(i & 255)) await yieldSlice();
+        const x = (R() * 2 - 1) * 22.0;
+        const z = -25.0 + R() * 26.4;
+        if (inIntroCorridor(x, z) || !insideMeadowFrustum(x, z, false)) continue;
+        const y = surroundFloor(x, z) - 0.04 + R() * 0.28;
+        const rOrbit = Math.hypot(x - SAKURA_X, z - SAKURA_Z);
+        const size = (0.80 + R() * 1.12) * (1.0 + Math.max(0, rOrbit - 10) * 0.034);
+        pushGrass(x, y, z, size, 0.36 + 0.76 * R(), 0.0);
+      }
+
+      // Extra rear-left transition belt foliage so new flowerbeds sit on lush dark greenery
+      const rearLeftFoliage = lowEnd ? 350 : 550;
+      for (let i = 0; i < rearLeftFoliage; i++) {
+        const x = -18.0 + R() * 24.0;
+        const z = -7.0 + R() * 11.0;
+        if (inIntroCorridor(x, z) || !insideMeadowFrustum(x, z, false)) continue;
+        const y = surroundFloor(x, z) - 0.06 + R() * 0.26;
+        pushGrass(x, y, z, 0.76 + R() * 0.96, 0.36 + 0.76 * R(), 0.0);
       }
 
       // 2. Siltora-Style Cascading Diagonal Wildflower Streams (Abundant Pastel Pink + Scattered Pastel Blue)
@@ -1489,11 +2159,12 @@ export function createLotusScene(canvas, options) {
       addValleyRibbon(2.0, 24.0, 18, (u) => 1.7 + u * 7.2 + S(u * 4.0) * 0.7, -1, [0, 1, 4, 6, 7], 0.86, 1.08, 0.94);
       addValleyRibbon(14.0, 44.0, 16, (u) => 8.2 + u * 12.2 - S(u * 3.8 + 0.5) * 1.1, -1, [1, 5, 6, 2, 7], 0.92, 1.22, 0.96);
 
-      // Right canyon wall iconic S-curved cascades (4 sweeping streams winding into lower-right bank)
+      // Right canyon wall iconic S-curved cascades (4 sweeping streams winding into lower-right bank + upper-right outer crest)
       addValleyRibbon(3.6, 48.0, 34, (u) => 2.4 + Math.pow(u, 0.95) * 18.0 - S(u * 6.2 + 0.4) * 1.5, 1, rightPalette, 0.96, 1.30, 0.95);
       addValleyRibbon(9.0, 52.0, 26, (u) => 5.2 + Math.pow(u, 0.86) * 18.2 + S(u * 4.8) * 1.3, 1, [4, 2, 7, 1, 5], 0.98, 1.34, 0.96);
       addValleyRibbon(2.0, 25.0, 18, (u) => 1.9 + u * 7.4 - C(u * 3.8) * 0.7, 1, [1, 3, 6, 0, 7], 0.88, 1.10, 0.94);
       addValleyRibbon(14.0, 44.0, 16, (u) => 8.5 + u * 12.0 + C(u * 3.6 + 0.3) * 1.2, 1, [0, 4, 7, 3, 6], 0.92, 1.22, 0.96);
+      addValleyRibbon(12.0, 44.0, 20, (u) => 11.5 + u * 10.5 + S(u * 3.0) * 0.9, 1, [0, 6, 2, 7, 1], 1.10, 1.35, 0.96);
 
       // Foreground low curtain right in front of lotus (tucks bloom cleanly behind foreground beds) + rich flanking front beds
       beds.push(
@@ -1579,13 +2250,89 @@ export function createLotusScene(canvas, options) {
         [4.40, 15.0, 6, 1.28, 1.15, 0.96, 1.15],
         [2.50, 13.5, 1, 1.15, 1.05, 0.96, 1.75],
         [3.20, 17.5, 5, 1.32, 1.20, 0.96, 1.65],
-        [5.20, 19.0, 7, 1.36, 1.22, 0.96, 0.90]
+        [5.20, 19.0, 7, 1.36, 1.22, 0.96, 0.90],
+        // 1c. Dense lower-half foreground fill sealing every bottom patch without triple-stacking
+        [-3.40, 1.45, 2, 0.94, 0.70, 0.96, -0.14],
+        [-2.45, 1.32, 6, 0.92, 0.68, 0.96, -0.17],
+        [-1.55, 1.28, 7, 0.90, 0.66, 0.96, -0.18],
+        [-0.75, 1.21, 3, 0.88, 0.64, 0.96, -0.20],
+        [0.05,  1.21, 5, 0.86, 0.64, 0.96, -0.20],
+        [0.95,  1.25, 6, 0.88, 0.66, 0.96, -0.20],
+        [1.90,  1.35, 2, 0.92, 0.68, 0.96, -0.17],
+        [2.95,  1.52, 7, 0.96, 0.72, 0.96, -0.12],
+        [3.55,  1.68, 0, 1.00, 0.76, 0.96, -0.06],
+        [-1.80, 2.50, 1, 0.94, 0.74, 0.96, 0.08],
+        [-0.50, 2.45, 6, 0.90, 0.72, 0.96, 0.10],
+        [0.65,  2.48, 2, 0.90, 0.72, 0.96, 0.08],
+        [1.85,  2.60, 7, 0.94, 0.76, 0.96, 0.06]
       );
 
+      // Five dense serpentine wildflower ribbons directly behind first POV (fills entire #contact left hillside)
+      const rearRibbons = [
+        { steps: 14, x0: 16.0, x1: -16.0, z0: 0.6, z1: -6.5,  yBoost: 0.26, pal: [0, 2, 6, 4, 7] },
+        { steps: 16, x0: 18.0, x1: -18.0, z0: -3.5, z1: -11.5, yBoost: 0.38, pal: [1, 5, 7, 0, 6] },
+        { steps: 16, x0: 17.5, x1: -19.0, z0: -8.5, z1: -16.5, yBoost: 0.48, pal: [2, 0, 6, 3, 7] },
+        { steps: 14, x0: 16.0, x1: -18.0, z0: -13.5, z1: -21.0, yBoost: 0.58, pal: [4, 7, 1, 6, 0] },
+        { steps: 12, x0: 14.0, x1: -16.0, z0: -17.5, z1: -24.0, yBoost: 0.68, pal: [0, 6, 5, 2, 7] },
+      ];
+      for (const rib of rearRibbons) {
+        for (let rIdx = 0; rIdx < rib.steps; rIdx++) {
+          const u = rIdx / Math.max(1, rib.steps - 1);
+          const bx = rib.x0 + (rib.x1 - rib.x0) * u + C(u * 4.5) * 1.2;
+          const bz = rib.z0 + (rib.z1 - rib.z0) * u + S(u * 5.0) * 1.4;
+          if (inIntroCorridor(bx, bz) || !insideMeadowFrustum(bx, bz, false)) continue;
+          const pal = rib.pal[rIdx % rib.pal.length];
+          const sc = 1.22 + (1.0 - Math.abs(u - 0.5) * 0.4) * 0.45;
+          beds.push([bx, bz, pal, sc, sc * 0.96, 0.96, rib.yBoost, 1]);
+        }
+      }
+
+      // Dedicated gap-fill bands behind first POV (left side & transition belt seen on #works/#contact)
+      const rearLeftGapBands = [
+        { steps: 12, x0: -16.5, x1: 4.5,  z0: 3.6,  z1: -1.8, yBoost: 0.24, pal: [0, 6, 2, 7, 4], is360: 1 },
+        { steps: 14, x0: -18.0, x1: 6.0,  z0: 0.6,  z1: -4.2, yBoost: 0.30, pal: [2, 7, 1, 6, 5], is360: 1 },
+        { steps: 14, x0: -18.5, x1: 5.0,  z0: -2.6, z1: -6.8, yBoost: 0.36, pal: [0, 3, 6, 4, 7], is360: 1 },
+        { steps: 11, x0: -15.5, x1: -4.2, z0: 14.5, z1: 4.2,  yBoost: 0.38, pal: [1, 6, 0, 7, 2], is360: 0 },
+        { steps: 9,  x0: -21.5, x1: -14.5, z0: 19.5, z1: 8.5, yBoost: 0.42, pal: [0, 6, 2, 7, 1], is360: 0 },
+      ];
+      for (const band of rearLeftGapBands) {
+        for (let bi = 0; bi < band.steps; bi++) {
+          const u = bi / Math.max(1, band.steps - 1);
+          const bx = band.x0 + (band.x1 - band.x0) * u + S(u * 4.0) * 0.9;
+          const bz = band.z0 + (band.z1 - band.z0) * u + C(u * 3.5) * 0.9;
+          if (band.is360 && inIntroCorridor(bx, bz)) continue;
+          if (!insideMeadowFrustum(bx, bz, false)) continue;
+          const pal = band.pal[bi % band.pal.length];
+          const sc = 1.15 + 0.35 * S(u * Math.PI);
+          beds.push([bx, bz, pal, sc, sc * 0.95, 0.96, band.yBoost, band.is360]);
+        }
+      }
+
+      // Uniform 360-degree concentric wildflower rings outside intro valley (complete horizon on every tab angle)
+      const ringSpecs = [
+        { r: 7.0,  count: lowEnd ? 10 : 14, scale: 1.02, yBoost: 0.18 },
+        { r: 11.8, count: lowEnd ? 14 : 20, scale: 1.18, yBoost: 0.28 },
+        { r: 17.2, count: lowEnd ? 18 : 26, scale: 1.38, yBoost: 0.42 },
+        { r: 23.2, count: lowEnd ? 22 : 30, scale: 1.62, yBoost: 0.56 },
+        { r: 29.8, count: lowEnd ? 24 : 34, scale: 1.88, yBoost: 0.72 },
+      ];
+      for (let ri = 0; ri < ringSpecs.length; ri++) {
+        const ring = ringSpecs[ri];
+        for (let a = 0; a < ring.count; a++) {
+          const theta = (TAU * (a + (ri % 2) * 0.5)) / ring.count + (R() - 0.5) * 0.16;
+          const rr = ring.r + (R() - 0.5) * 2.2;
+          const bx = SAKURA_X + C(theta) * rr;
+          const bz = SAKURA_Z + S(theta) * rr;
+          if (inIntroCorridor(bx, bz)) continue;
+          const pal = (a * 3 + ri * 2) % 8;
+          beds.push([bx, bz, pal, ring.scale, ring.scale * 0.96, 0.96, ring.yBoost, 1]);
+        }
+      }
+
       // Midground valley pockets on slopes + sparse faint center canyon floor wisps
-      const pocketCount = lowEnd ? 46 : 68;
+      const pocketCount = lowEnd ? 36 : 52;
       for (let b = 0; b < pocketCount; b++) {
-        const z = 4.4 + Math.pow(R(), 0.94) * 48.6;
+        const z = 4.4 + Math.pow(R(), 0.94) * 34.0;
         const side = R() < 0.5 ? -1 : 1;
         const maxOff = Math.min(22.0, (z + 0.55) * 1.14);
         const minOff = z > 10.5 ? 2.0 : 1.15;
@@ -1598,34 +2345,50 @@ export function createLotusScene(canvas, options) {
 
       for (let b = 0; b < beds.length; b++) {
         await yieldSlice();
-        const [bx, bz, k, w, d, litBoost, yBoost = 0] = beds[b];
-        const families = bz < 9.5
-          ? Math.min(26, Math.round(w * d * 6.0 + 6))
-          : bz < 22.0
-            ? Math.min(19, Math.round(w * d * 4.4 + 4))
-            : Math.min(11, Math.round(w * d * 2.8 + 2));
+        const [bx, bz, k, w, d, litBoost, yBoost = 0, is360 = 0] = beds[b];
+        const families = is360
+          ? Math.min(24, Math.round(w * d * 5.2 + 6))
+          : bz < 6.5
+            ? Math.min(30, Math.round(w * d * 7.2 + 8))
+            : bz < 9.5
+              ? Math.min(26, Math.round(w * d * 6.0 + 6))
+              : bz < 22.0
+                ? Math.min(19, Math.round(w * d * 4.4 + 4))
+                : Math.min(11, Math.round(w * d * 2.8 + 2));
         for (let f = 0; f < families; f++) {
           const a = R() * TAU;
           const rr = Math.sqrt(R());
           const fx = bx + C(a) * rr * w * 1.18;
           const fz = bz + S(a) * rr * d * 1.18;
-          const fOff = fx - valleyCourse(fz);
-          if (fz > 24.0 && Math.abs(fOff) < 1.15 && R() < 0.65) continue;
+          if (!is360) {
+            const fOff = fx - valleyCourse(fz);
+            if (fz > 24.0 && Math.abs(fOff) < 1.15 && R() < 0.65) continue;
+          }
           if (!insideMeadowFrustum(fx, fz, false)) continue;
-          const baseFl = (0.29 + R() * 0.25) * (fz > 14 ? 1.0 + (fz - 14) * 0.044 : 1.0);
+          const rOrbitCenter = Math.hypot(fx - SAKURA_X, fz - SAKURA_Z);
+          const baseFl = is360
+            ? (0.32 + R() * 0.24) * (1.0 + Math.max(0, rOrbitCenter - 10) * 0.042)
+            : (0.29 + R() * 0.25) * (fz > 14 ? 1.0 + (fz - 14) * 0.044 : 1.0);
           const lf = (0.90 + R() * 0.12) * litBoost;
-          const clusterCount = bz < 9.5
-            ? 3 + Math.floor(R() * 4)
-            : bz < 22.0
-              ? 2 + Math.floor(R() * 3)
-              : 2 + Math.floor(R() * 2);
-          const clusterSpread = 0.48 + (fz > 16 ? (fz - 16) * 0.022 : 0);
+          const clusterCount = is360
+            ? 3 + Math.floor(R() * 3)
+            : bz < 9.5
+              ? 3 + Math.floor(R() * 4)
+              : bz < 22.0
+                ? 2 + Math.floor(R() * 3)
+                : 2 + Math.floor(R() * 2);
+          const clusterSpread = is360
+            ? 0.56 + Math.max(0, rOrbitCenter - 12) * 0.024
+            : 0.48 + (fz > 16 ? (fz - 16) * 0.022 : 0);
           for (let i = 0; i < clusterCount; i++) {
             const xx = fx + (R() - 0.5) * clusterSpread;
             const zz = fz + (R() - 0.5) * clusterSpread;
-            const yy = meadowFloor(xx, zz) + 0.24 + yBoost + R() * 0.22;
+            if (is360 && inIntroCorridor(xx, zz)) continue;
+            const baseY = is360 ? surroundFloor(xx, zz) : meadowFloor(xx, zz);
+            const yy = baseY + 0.24 + yBoost + R() * 0.22;
             const flSize = baseFl * (0.58 + R() * 0.76);
             if (!insideStaticView(xx, yy, zz, flSize)) continue;
+            if (R() < (is360 ? 0.10 : 0.195)) continue;
             const kk = R() < 0.74 ? k : (R() < 0.65 ? 6 + Math.floor(R() * 2) : (k + 2) % 6);
             const tileId = 16 + kk + (R() < 0.5 ? 8 : 0);
             const ang = Math.atan2(zz - SAKURA_Z, xx - SAKURA_X);
@@ -1658,28 +2421,14 @@ export function createLotusScene(canvas, options) {
         pushParticle(px, py, pz, 0.40 + R() * 0.44, Math.floor(R() * 12), R(), 0.68 + R() * 0.42, 2.0, a, rr, 0.3, 0.0);
       }
 
-      // 4. Delicate Sakura Stamens Inside Blossom Throat (role = 1, tile = 15)
-      // The shader positions stamens from aExtra.w; aBase.z is only the depth-sort key.
-      // Sorting them at the lotus depth keeps them in the back slice: drawn BEFORE the
-      // lotus petals (so petals cover them) and before the foreground flowerbed.
-      for (let s = 0; s < 130; s++) {
+      // 4. Floating Golden-Pink Pollen Glints Orbiting the 3D Stamen Crown (role = 1, tile = 15)
+      for (let s = 0; s < 72; s++) {
         const a = R() * TAU;
-        const r = Math.pow(R(), 0.65) * 0.62;
+        const r = Math.pow(R(), 0.58) * 1.95;
         const lx = C(a) * r;
-        const ly = 0.22 + (1.0 - r * 0.55) * 0.7 + (R() - 0.5) * 0.16;
+        const ly = 0.36 + (1.0 - r * 0.25) * 0.65 + (R() - 0.5) * 0.24;
         const lz = S(a) * r;
-        pushParticle(lx, ly, SAKURA_Z + 0.2 + lz * 0.5, 0.24 + R() * 0.16, 15, R(), 1.15, 1.0, 1.0, a, 0.5, lz);
-      }
-
-      // 4.5 Soft Pink Bloom Halo Aura Behind Lotus Blossom (role = 3, tile = 34)
-      for (let i = 0; i < 14; i++) {
-        const a = (TAU * i) / 14 + R() * 0.2;
-        const ring = i % 3;
-        const tier = Math.floor(i / 6);
-        const rr = 0.18 + ring * 0.34;
-        const lx = C(a) * rr;
-        const ly = 1.05 + tier * 0.68 + (R() - 0.5) * 0.18;
-        pushParticle(lx, ly, SAKURA_Z + 0.25, 3.2 + R() * 0.9, 34, R(), 1.0, 3.0, 0.0, 0.0, 0.0, 0.25);
+        pushParticle(lx, ly, SAKURA_Z + lz, 0.14 + R() * 0.10, 15, R(), 1.12, 1.0, 1.0, a, 0.5, lz);
       }
 
       // 5. Floating Pastel Pollen Motes (tile = 32)
@@ -1698,35 +2447,119 @@ export function createLotusScene(canvas, options) {
         pushParticle(fx, fy, fz, 0.32 + R() * 0.18, 33, R(), 1.0, 0.0, Math.atan2(fz - SAKURA_Z, fx), fz, 0.5 + R() * 0.6, 0.0);
       }
 
-      // 7. Sort Far-to-Near along Z and split around central lotus depth
+      // 7. Pack VBO & Build O(N) 256-Bucket Camera-Depth Radix Sort Buffers
       await yieldSlice();
-      particles.sort((a, b) => b[2] - a[2]);
-      particleCount = particles.length;
-      sakuraSplitIndex = particles.findIndex((p) => p[2] < SAKURA_Z - 0.55);
-      if (sakuraSplitIndex === -1) sakuraSplitIndex = particleCount;
+      particleCount = Math.min(65000, particles.length);
 
-      particleZs = new Float32Array(particleCount);
+      // Select 24 real wildflowers that catch and rest naturally on the open lotus petals after fly-up
+      const landSlots = [];
+      for (let p = 0; p < 8; p++) {
+        const azOuter = 0.18 + (TAU * p) / 8;
+        landSlots.push(
+          { ringNorm: 0.0, az: azOuter, u: 0.56 + (p % 2) * 0.12, v: p % 2 ? 0.24 : -0.26, wantBlue: p % 3 === 1 },
+          { ringNorm: 0.0, az: azOuter, u: 0.72 - (p % 2) * 0.10, v: p % 2 ? -0.22 : 0.26, wantBlue: p % 3 === 2 }
+        );
+        const azMid = 0.18 + Math.PI / 8 + (TAU * p) / 8;
+        landSlots.push(
+          { ringNorm: 0.5, az: azMid, u: 0.54 + (p % 3) * 0.08, v: p % 2 ? -0.18 : 0.20, wantBlue: p % 2 === 0 }
+        );
+      }
+      const assignedLanders = new Set();
+      for (const slot of landSlots) {
+        const approxR = slot.ringNorm < 0.25 ? 3.8 : 3.2;
+        const tx = SAKURA_X + C(slot.az) * approxR;
+        const tz = SAKURA_Z + S(slot.az) * approxR;
+        let bestIdx = -1;
+        let bestScore = Infinity;
+        let fallbackIdx = -1;
+        let fallbackScore = Infinity;
+        for (let i = 0; i < particleCount; i++) {
+          if (assignedLanders.has(i)) continue;
+          const pt = particles[i];
+          const tid = pt[4];
+          if (pt[7] >= 0.5 || tid < 16 || tid >= 32) continue;
+          const d2 = (pt[0] - tx) * (pt[0] - tx) + (pt[2] - tz) * (pt[2] - tz);
+          const isBluePal = (tid - 16) % 8 >= 6;
+          if (isBluePal === slot.wantBlue && d2 < bestScore) {
+            bestScore = d2;
+            bestIdx = i;
+          }
+          if (d2 < fallbackScore) {
+            fallbackScore = d2;
+            fallbackIdx = i;
+          }
+        }
+        const pick = bestIdx !== -1 ? bestIdx : fallbackIdx;
+        if (pick !== -1) {
+          assignedLanders.add(pick);
+          const pt = particles[pick];
+          pt[9] = slot.az;
+          pt[11] = 10.0 + (slot.ringNorm > 0.25 ? 100.0 : 0.0) + Math.round(slot.u * 50) + (slot.v * 0.5 + 0.5);
+        }
+      }
+
+      const meadowIdxList = [];
+      const coreIndices = [];
       const packed = new Float32Array(particleCount * 12);
       const flTemp = [];
       let fCount = 0;
       let gCount = 0;
       for (let i = 0; i < particleCount; i++) {
         const pt = particles[i];
-        particleZs[i] = pt[2];
         packed.set(pt, i * 12);
         const tileId = pt[4];
+        const roleVal = pt[7];
         if (tileId >= 16 && tileId < 32) {
           flTemp.push(pt[0], pt[1], pt[2], pt[3]);
           fCount++;
         } else if (tileId < 12) {
           gCount++;
         }
+        if (roleVal > 0.5 && roleVal < 1.5) {
+          coreIndices.push(i);
+        } else {
+          meadowIdxList.push(i);
+        }
       }
+
+      meadowCount = meadowIdxList.length;
+      meadowPosX = new Float32Array(meadowCount);
+      meadowPosY = new Float32Array(meadowCount);
+      meadowPosZ = new Float32Array(meadowCount);
+      meadowLayerBias = new Float32Array(meadowCount);
+      meadowBandOffset = new Uint16Array(meadowCount);
+      meadowOrigIdx = new Uint16Array(meadowCount);
+      sortedMeadow = new Uint16Array(meadowCount);
+      depthKeys = new Uint16Array(meadowCount);
+      tempKeys = new Uint16Array(meadowCount);
+      tempIdx = new Uint16Array(meadowCount);
+      let band0Count = 0;
+      for (let k = 0; k < meadowCount; k++) {
+        const idx = meadowIdxList[k];
+        const pt = particles[idx];
+        const tid = pt[4];
+        meadowPosX[k] = pt[0];
+        meadowPosY[k] = pt[1];
+        meadowPosZ[k] = pt[2];
+        if (tid < 16) band0Count++;
+        meadowBandOffset[k] = tid < 16 ? 0 : 32768;
+        meadowLayerBias[k] = tid >= 32 ? 0.45 : 0.0;
+        meadowOrigIdx[k] = idx;
+      }
+      meadowFlowerStart = band0Count;
+
       flowerTotal = fCount;
       foliageTotal = gCount;
       flowerBounds = new Float32Array(flTemp);
       particles.length = 0;
       particleBuf = makeBuffer(packed);
+      glowQuadBuf = makeBuffer(new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]));
+      meadowEbo = gl.createBuffer();
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, meadowEbo);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, sortedMeadow, gl.DYNAMIC_DRAW);
+      coreCount = coreIndices.length;
+      coreEbo = makeElementBuffer(new Uint16Array(coreIndices));
+      hasSortedOnce = false;
 
       if (!document.hidden) windowBlurred = false;
       document.body.classList.add("webgl-ready");
@@ -1745,6 +2578,11 @@ export function createLotusScene(canvas, options) {
     const bgUniforms = {
       uTime: bgGl.getUniformLocation(bgProg, "uTime"),
       uAspect: bgGl.getUniformLocation(bgProg, "uAspect"),
+      uFocal: bgGl.getUniformLocation(bgProg, "uFocal"),
+      uViewMat: bgGl.getUniformLocation(bgProg, "uViewMat"),
+      uAim: bgGl.getUniformLocation(bgProg, "uAim"),
+      uSettle: bgGl.getUniformLocation(bgProg, "uSettle"),
+      uSkyFade: bgGl.getUniformLocation(bgProg, "uSkyFade"),
     };
 
     const smAttrs = {
@@ -1752,7 +2590,8 @@ export function createLotusScene(canvas, options) {
       aPetalDim: gl.getAttribLocation(sakuraMeshProg, "aPetalDim"),
     };
     const smUniforms = {
-      uCamera: gl.getUniformLocation(sakuraMeshProg, "uCamera"),
+      uCamPos: gl.getUniformLocation(sakuraMeshProg, "uCamPos"),
+      uViewMat: gl.getUniformLocation(sakuraMeshProg, "uViewMat"),
       uLens: gl.getUniformLocation(sakuraMeshProg, "uLens"),
       uAction: gl.getUniformLocation(sakuraMeshProg, "uAction"),
       uState: gl.getUniformLocation(sakuraMeshProg, "uState"),
@@ -1761,19 +2600,70 @@ export function createLotusScene(canvas, options) {
       uAaPass: gl.getUniformLocation(sakuraMeshProg, "uAaPass"),
     };
 
+    const stAttrs = {
+      aPart: gl.getAttribLocation(stamenProg, "aPart"),
+      aGeom: gl.getAttribLocation(stamenProg, "aGeom"),
+    };
+    const stUniforms = {
+      uCamPos: gl.getUniformLocation(stamenProg, "uCamPos"),
+      uViewMat: gl.getUniformLocation(stamenProg, "uViewMat"),
+      uLens: gl.getUniformLocation(stamenProg, "uLens"),
+      uAction: gl.getUniformLocation(stamenProg, "uAction"),
+      uState: gl.getUniformLocation(stamenProg, "uState"),
+      uAim: gl.getUniformLocation(stamenProg, "uAim"),
+      uSettle: gl.getUniformLocation(stamenProg, "uSettle"),
+      uAaPass: gl.getUniformLocation(stamenProg, "uAaPass"),
+    };
+
+    const glowAttrs = {
+      aQuad: gl.getAttribLocation(glowProg, "aQuad"),
+    };
+    const glowUniforms = {
+      uCamPos: gl.getUniformLocation(glowProg, "uCamPos"),
+      uViewMat: gl.getUniformLocation(glowProg, "uViewMat"),
+      uLens: gl.getUniformLocation(glowProg, "uLens"),
+      uAim: gl.getUniformLocation(glowProg, "uAim"),
+      uSettle: gl.getUniformLocation(glowProg, "uSettle"),
+      uGlowCenter: gl.getUniformLocation(glowProg, "uGlowCenter"),
+      uGlowColorA: gl.getUniformLocation(glowProg, "uGlowColorA"),
+      uGlowColorB: gl.getUniformLocation(glowProg, "uGlowColorB"),
+    };
+
     const pvAttrs = {
       aBase: gl.getAttribLocation(pvProg, "aBase"),
       aStyle: gl.getAttribLocation(pvProg, "aStyle"),
       aExtra: gl.getAttribLocation(pvProg, "aExtra"),
     };
     const pvUniforms = {
-      uCamera: gl.getUniformLocation(pvProg, "uCamera"),
+      uCamPos: gl.getUniformLocation(pvProg, "uCamPos"),
+      uViewMat: gl.getUniformLocation(pvProg, "uViewMat"),
       uLens: gl.getUniformLocation(pvProg, "uLens"),
       uAction: gl.getUniformLocation(pvProg, "uAction"),
       uState: gl.getUniformLocation(pvProg, "uState"),
       uAim: gl.getUniformLocation(pvProg, "uAim"),
+      uOverlay: gl.getUniformLocation(pvProg, "uOverlay"),
       uImage: gl.getUniformLocation(pvProg, "uImage"),
     };
+
+    function buildViewMatrix(cx, cy, cz, tx, ty, tz) {
+      let fx = tx - cx;
+      let fy = ty - cy;
+      let fz = tz - cz;
+      const fLen = Math.hypot(fx, fy, fz) || 1;
+      fx /= fLen;
+      fy /= fLen;
+      fz /= fLen;
+      let rx = fz;
+      let ry = 0;
+      let rz = -fx;
+      const rLen = Math.hypot(rx, rz) || 1;
+      rx /= rLen;
+      rz /= rLen;
+      const ux = fy * rz - fz * ry;
+      const uy = fz * rx - fx * rz;
+      const uz = fx * ry - fy * rx;
+      return new Float32Array([rx, ux, fx, ry, uy, fy, rz, uz, fz]);
+    }
 
     const hwMaxPointSize = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE)[1] || 256;
 
@@ -1795,6 +2685,7 @@ export function createLotusScene(canvas, options) {
         raf = 0;
       }
       lastNow = 0;
+      smoothDt = 1 / 60;
       if (flyDownTimer) {
         clearTimeout(flyDownTimer);
         flyDownTimer = 0;
@@ -1806,32 +2697,34 @@ export function createLotusScene(canvas, options) {
       if (disposed || paused || isBackgrounded()) return;
       if (pendingFlyDown && bloomTarget === 1) {
         pendingFlyDown = false;
-        flyTarget = 0.24;
+        fallElapsed = 0;
+        flyTarget = 0.22;
         settleTarget = 1;
       }
       lastNow = 0;
+      smoothDt = 1 / 60;
       wake();
-    }
-
-    function drawPointSlice(start, count) {
-      if (count <= 0) return;
-      gl.drawArrays(gl.POINTS, start, count);
     }
 
     function renderFrame(now) {
       raf = 0;
-      if (disposed || !canvas.isConnected || !particleBuf || !atlasTex || !sakuraMesh) return;
+      if (disposed || !canvas.isConnected || !particleBuf || !atlasTex || !sakuraMesh || !stamenMesh) return;
       if (isBackgrounded() && hasPaintedOnce) return;
 
       const isReduced = reducedMotionMQ.matches;
       const animating =
-        Math.abs(bloomTarget - bloomMix) > 0.004 ||
-        Math.abs(flyTarget - flyMix) > 0.004 ||
-        Math.abs(settleTarget - settleMix) > 0.004;
+        Boolean(flyDownTimer) ||
+        Math.abs(bloomTarget - bloomMix) > 0.003 ||
+        Math.abs(flyTarget - flyStage0) > 0.0025 ||
+        Math.abs(flyTarget - flyStage1) > 0.0025 ||
+        Math.abs(flyTarget - flyMix) > 0.0025 ||
+        Math.abs(diveTarget - diveMix) > 0.003 ||
+        Math.abs(settleTarget - settleMix) > 0.003 ||
+        Math.abs(tabYawTarget - tabYawMix) > 0.003;
 
       const pointerActive = now - lastPointerMoveMs < 550;
-      const settledOpen = settleMix > 0.975 && bloomTarget === 1 && Math.abs(bloomTarget - bloomMix) < 0.015;
-      const minGap = animating ? 0 : settledOpen ? 42 : pointerActive ? 14 : 28;
+      const settledOpen = settleMix > 0.96 && diveMix > 0.96 && bloomTarget === 1 && !animating;
+      const minGap = animating ? 0 : settledOpen ? 24 : pointerActive ? 14 : 24;
 
       const gap = now - (lastNow || now - 16);
       if (hasPaintedOnce && !paused && !isReduced && minGap > 0 && gap < minGap) {
@@ -1839,7 +2732,9 @@ export function createLotusScene(canvas, options) {
         return;
       }
 
-      const dt = Math.min(0.08, Math.max(0.001, gap * 0.001));
+      const rawDt = Math.min(0.034, Math.max(0.004, gap * 0.001));
+      smoothDt = animating ? smoothDt * 0.72 + rawDt * 0.28 : rawDt;
+      const dt = Math.min(0.028, smoothDt);
       lastNow = now;
       hasPaintedOnce = true;
       if (frameTicks < 6) {
@@ -1847,12 +2742,28 @@ export function createLotusScene(canvas, options) {
         if (frameTicks === 5) document.body.dataset.animStarted = "1";
       }
 
-      const bloomRate = bloomTarget > bloomMix ? 2.1 : 0.78;
+      const bloomRate = bloomTarget > bloomMix ? 2.15 : 1.25;
       const bloomEase = isReduced ? 1 : 1 - Math.exp(-dt * bloomRate);
+      const diveRate = diveTarget > diveMix ? 1.55 : 1.40;
+      const diveEase = isReduced ? 1 : 1 - Math.exp(-dt * diveRate);
       const fastEase = isReduced ? 1 : 1 - Math.exp(-dt * 5.0);
-      const flyRate = flyTarget > flyStage1 ? 2.35 : (bloomTarget === 1 ? 0.82 : 1.10);
+      const tabEase = isReduced ? 1 : 1 - Math.exp(-dt * 3.4);
+      if (!paused && !isReduced && bloomTarget === 1 && !flyDownTimer && flyTarget < 0.5) {
+        fallElapsed += dt;
+      }
+      const fT = Math.max(0, Math.min(1, fallElapsed / 2.10));
+      const fallRamp = fT * fT * (3 - 2 * fT);
+      const nearGround = Math.max(0, Math.min(1, (flyMix - flyTarget) / 0.34));
+      const groundCushion = 0.61 + 0.53 * nearGround;
+      const fallRate = 0.28 + (groundCushion - 0.28) * fallRamp;
+      const flyRate =
+        flyTarget > flyStage0
+          ? 4.4
+          : flyTarget > 0.05
+            ? fallRate
+            : 2.1;
       const flyEase = isReduced ? 1 : 1 - Math.exp(-dt * flyRate);
-      const settleRate = settleTarget > settleMix ? 0.92 : 1.65;
+      const settleRate = settleTarget > settleMix ? 0.10 + 0.61 * fallRamp : 1.55;
 
       if (!paused) {
         if (!isReduced) {
@@ -1860,11 +2771,14 @@ export function createLotusScene(canvas, options) {
         }
         bloomMix += (bloomTarget - bloomMix) * bloomEase;
         if (!isReduced && bloomTarget < bloomMix) {
-          bloomMix = Math.max(bloomTarget, bloomMix - dt * 0.16);
+          bloomMix = Math.max(bloomTarget, bloomMix - dt * 0.22);
         }
+        diveMix += (diveTarget - diveMix) * diveEase;
         settleMix += (settleTarget - settleMix) * (isReduced ? 1 : 1 - Math.exp(-dt * settleRate));
+        tabYawMix += (tabYawTarget - tabYawMix) * tabEase;
 
-        flyStage1 += (flyTarget - flyStage1) * flyEase;
+        flyStage0 += (flyTarget - flyStage0) * flyEase;
+        flyStage1 += (flyStage0 - flyStage1) * flyEase;
         flyMix += (flyStage1 - flyMix) * flyEase;
 
         ax += (mx - ax) * fastEase;
@@ -1878,17 +2792,13 @@ export function createLotusScene(canvas, options) {
 
       const cw = Math.max(1, canvas.clientWidth);
       const ch = Math.max(1, canvas.clientHeight);
-      const maxDpr = settledOpen ? 0.45 : lowEnd ? 1.2 : 1.15;
+      const maxDpr = lowEnd ? 0.95 : 1.0;
       const targetDpr = Math.min(window.devicePixelRatio || 1, maxDpr);
       const nativePixels = Math.round(cw * ch * targetDpr * targetDpr);
-      const hi = settledOpen
-        ? nativePixels
-        : Math.max(lowEnd ? 750000 : 1200000, Math.min(nativePixels, lowEnd ? 1150000 : 1850000));
-      const minBudget = settledOpen
-        ? nativePixels
-        : Math.max(Math.round(cw * ch * 0.72), lowEnd ? 400000 : 650000);
+      const hi = Math.max(lowEnd ? 750000 : 1200000, Math.min(nativePixels, lowEnd ? 1150000 : 1850000));
+      const minBudget = Math.max(Math.round(cw * ch * 0.72), lowEnd ? 400000 : 650000);
 
-      if (!settledOpen && now - budgetAt > 1100) {
+      if (!animating && !settledOpen && now - budgetAt > 1500) {
         if (avgGap > 36 && budget > minBudget) {
           budget = Math.max(minBudget, Math.round(budget * 0.82));
         } else if (avgGap < 20 && budget < hi) {
@@ -1897,7 +2807,7 @@ export function createLotusScene(canvas, options) {
         budgetAt = now;
       }
 
-      const dpr = settledOpen ? maxDpr : Math.min(targetDpr, Math.sqrt(budget / (cw * ch)));
+      const dpr = Math.min(targetDpr, Math.sqrt(budget / (cw * ch)));
       const maxPointSize = Math.min(
         hwMaxPointSize,
         Math.round((lowEnd ? 84 : 96) * dpr)
@@ -1911,14 +2821,40 @@ export function createLotusScene(canvas, options) {
         canvas.width = widthPx = W;
         canvas.height = heightPx = H;
         gl.viewport(0, 0, widthPx, heightPx);
+      }
+      if (cw !== lastStatsW || ch !== lastStatsH) {
+        lastStatsW = cw;
+        lastStatsH = ch;
         updateSceneStats(focal, aspect);
       }
-      const camX = ax * 0.18 + (isReduced ? 0 : 0.14 * S(tClock * 0.25));
-      const camY = 2.58 + (isReduced ? 0 : 0.05 * S(tClock * 0.34));
-      const camZ = -0.35;
-      const camPitch = -0.02;
 
-      // 1. Starry AMOLED dark sky + V-valley silhouette (dedicated background canvas below intro copy)
+      // Side-View Balanced Stage Orbit (~93 deg -> ~131 deg across tabs, synchronized 360-deg spherical sky)
+      const dCurve = diveMix * diveMix * (3 - 2 * diveMix);
+      const orbitYaw =
+        dCurve * 1.62 +
+        tabYawMix * dCurve +
+        (isReduced ? 0 : S(tClock * 0.22) * (0.014 + 0.018 * dCurve)) +
+        ax * (0.02 + 0.06 * dCurve);
+      const introTargetY = 2.683;
+      const introElev = Math.atan2(2.58 - introTargetY, 8.85);
+      const openElev = 0.42 + ay * 0.045 * dCurve;
+      const elev = introElev + (openElev - introElev) * Math.pow(dCurve, 0.92);
+      const openDist = aspect < 0.85 ? 12.8 : 11.4;
+      const dist = 8.85 + (openDist - 8.85) * dCurve + S(dCurve * Math.PI) * 1.15;
+
+      const targetX = 0.0;
+      const openTargetY = aspect < 0.85 ? 9.40 : 7.40;
+      const targetY = introTargetY + (openTargetY - introTargetY) * dCurve;
+      const targetZ = SAKURA_Z;
+
+      const horiz = dist * C(elev);
+      const camX = targetX + S(orbitYaw) * horiz + (1 - dCurve) * (ax * 0.18 + (isReduced ? 0 : 0.14 * S(tClock * 0.25)));
+      const camZ = targetZ - C(orbitYaw) * horiz;
+      const camY = targetY + dist * S(elev) + (1 - dCurve) * (isReduced ? 0 : 0.05 * S(tClock * 0.34));
+      const viewMat = buildViewMatrix(camX, camY, camZ, targetX, targetY, targetZ);
+      const skyFade = Math.max(0.0, 1.0 - dCurve * 1.0);
+
+      // 1. Camera-Synced 360-Degree Spherical Starry Sky + Periodic Aurora
       if (skyGl && skyCanvas && skyCanvas.isConnected) {
         const skyDpr = 0.65;
         const sW = Math.max(2, Math.round(cw * skyDpr));
@@ -1929,7 +2865,7 @@ export function createLotusScene(canvas, options) {
           skyCanvas.height = skyHeightPx = sH;
           skyGl.viewport(0, 0, skyWidthPx, skyHeightPx);
         }
-        if (skyResized || lastSkyNow === 0 || (!settledOpen && now - lastSkyNow >= 95)) {
+        if (skyResized || lastSkyNow === 0 || animating || pointerActive || now - lastSkyNow >= 50) {
           lastSkyNow = now;
           skyGl.disable(skyGl.DEPTH_TEST);
           skyGl.disable(skyGl.CULL_FACE);
@@ -1940,6 +2876,11 @@ export function createLotusScene(canvas, options) {
           skyGl.vertexAttribPointer(bgPosLoc, 2, skyGl.FLOAT, false, 0, 0);
           skyGl.uniform1f(bgUniforms.uTime, tClock);
           skyGl.uniform1f(bgUniforms.uAspect, skyWidthPx / skyHeightPx);
+          skyGl.uniform1f(bgUniforms.uFocal, focal);
+          skyGl.uniformMatrix3fv(bgUniforms.uViewMat, false, viewMat);
+          skyGl.uniform2f(bgUniforms.uAim, ax, ay);
+          skyGl.uniform1f(bgUniforms.uSettle, settleMix);
+          skyGl.uniform1f(bgUniforms.uSkyFade, skyFade);
           skyGl.drawArrays(skyGl.TRIANGLES, 0, 3);
           skyGl.disableVertexAttribArray(bgPosLoc);
         }
@@ -1958,45 +2899,127 @@ export function createLotusScene(canvas, options) {
         gl.vertexAttribPointer(bgPosLoc, 2, gl.FLOAT, false, 0, 0);
         gl.uniform1f(bgUniforms.uTime, tClock);
         gl.uniform1f(bgUniforms.uAspect, aspect);
+        gl.uniform1f(bgUniforms.uFocal, focal);
+        gl.uniformMatrix3fv(bgUniforms.uViewMat, false, viewMat);
+        gl.uniform2f(bgUniforms.uAim, ax, ay);
+        gl.uniform1f(bgUniforms.uSettle, settleMix);
+        gl.uniform1f(bgUniforms.uSkyFade, skyFade);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
         gl.disableVertexAttribArray(bgPosLoc);
       }
 
-      // 2. Deep & midground meadow behind the lotus (premultiplied alpha eliminates dark fringes)
-      gl.enable(gl.BLEND);
-      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-      gl.useProgram(pvProg);
-      gl.bindTexture(gl.TEXTURE_2D, atlasTex);
-      gl.bindBuffer(gl.ARRAY_BUFFER, particleBuf);
+      // Exact 16-bit Radix Sort driven strictly by canonical (baseYaw, baseElev, baseDist) -> zero idle/mouse flicker
+      const bloomS = bloomMix * bloomMix * (3 - 2 * bloomMix);
+      const bloomLift = bloomS * 2.10;
+      const anchorY = 0.42 + bloomLift;
+      const sharedScale = 1.0 + Math.min(1, Math.max(0, bloomMix / 0.92)) * 0.40 + settleMix * 0.08;
+
+      const baseYaw = dCurve * 1.62 + tabYawMix * dCurve;
+      const baseElev = introElev + (0.42 - introElev) * Math.pow(dCurve, 0.92);
+      const baseDist = 8.85 + (openDist - 8.85) * dCurve + S(dCurve * Math.PI) * 1.15;
+      const sortThreshold = animating ? 0.024 : 0.001;
+      if (
+        !hasSortedOnce ||
+        Math.abs(baseYaw - lastSortedYaw) > sortThreshold ||
+        Math.abs(baseElev - lastSortedElev) > sortThreshold ||
+        Math.abs(baseDist - lastSortedDist) > (animating ? 0.30 : 0.04)
+      ) {
+        const baseHoriz = baseDist * C(baseElev);
+        const baseCamX = targetX + S(baseYaw) * baseHoriz;
+        const baseCamZ = targetZ - C(baseYaw) * baseHoriz;
+        const baseCamY = targetY + baseDist * S(baseElev);
+        const baseViewMat = buildViewMatrix(baseCamX, baseCamY, baseCamZ, targetX, targetY, targetZ);
+        sortMeadowByCamera(baseCamX, baseCamY, baseCamZ, baseViewMat);
+        lastSortedYaw = baseYaw;
+        lastSortedElev = baseElev;
+        lastSortedDist = baseDist;
+      }
+
+      function drawGlowBillboard(cx, cy, cz, radius, rA, gA, bA, opA, rB, gB, bB, sharpB) {
+        gl.useProgram(glowProg);
+        gl.bindBuffer(gl.ARRAY_BUFFER, glowQuadBuf);
+        gl.enableVertexAttribArray(glowAttrs.aQuad);
+        gl.vertexAttribPointer(glowAttrs.aQuad, 2, gl.FLOAT, false, 0, 0);
+        gl.uniform3f(glowUniforms.uCamPos, camX, camY, camZ);
+        gl.uniformMatrix3fv(glowUniforms.uViewMat, false, viewMat);
+        gl.uniform4f(glowUniforms.uLens, focal, aspect, heightPx, maxPointSize);
+        gl.uniform2f(glowUniforms.uAim, ax, ay);
+        gl.uniform1f(glowUniforms.uSettle, settleMix);
+        gl.uniform4f(glowUniforms.uGlowCenter, cx, cy, cz, radius);
+        gl.uniform4f(glowUniforms.uGlowColorA, rA, gA, bA, opA);
+        gl.uniform4f(glowUniforms.uGlowColorB, rB, gB, bB, sharpB);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        gl.disableVertexAttribArray(glowAttrs.aQuad);
+      }
+
+      function drawPvRange(ebo, count, offsetBytes, overlayAlpha = 1.0, overlayMode = 0.0) {
+        if (!ebo || count <= 0) return;
+        gl.useProgram(pvProg);
+        gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+        gl.bindBuffer(gl.ARRAY_BUFFER, particleBuf);
+        gl.enableVertexAttribArray(pvAttrs.aBase);
+        gl.vertexAttribPointer(pvAttrs.aBase, 4, gl.FLOAT, false, stride, 0);
+        gl.enableVertexAttribArray(pvAttrs.aStyle);
+        gl.vertexAttribPointer(pvAttrs.aStyle, 4, gl.FLOAT, false, stride, 16);
+        gl.enableVertexAttribArray(pvAttrs.aExtra);
+        gl.vertexAttribPointer(pvAttrs.aExtra, 4, gl.FLOAT, false, stride, 32);
+
+        gl.uniform3f(pvUniforms.uCamPos, camX, camY, camZ);
+        gl.uniformMatrix3fv(pvUniforms.uViewMat, false, viewMat);
+        gl.uniform4f(pvUniforms.uLens, focal, aspect, heightPx, maxPointSize);
+        gl.uniform4f(pvUniforms.uAction, tClock, bloomMix, flyMix, isReduced ? 0 : mouseSmooth);
+        gl.uniform3f(pvUniforms.uState, settleMix, aspect, dCurve);
+        gl.uniform2f(pvUniforms.uAim, ax, ay);
+        gl.uniform2f(pvUniforms.uOverlay, overlayAlpha, overlayMode);
+        gl.uniform1i(pvUniforms.uImage, 0);
+
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo);
+        gl.drawElements(gl.POINTS, count, gl.UNSIGNED_SHORT, offsetBytes);
+
+        gl.disableVertexAttribArray(pvAttrs.aBase);
+        gl.disableVertexAttribArray(pvAttrs.aStyle);
+        gl.disableVertexAttribArray(pvAttrs.aExtra);
+      }
+
+      const useFrontDepth = meadowCount > 0;
 
       const stride = 48;
-      gl.enableVertexAttribArray(pvAttrs.aBase);
-      gl.vertexAttribPointer(pvAttrs.aBase, 4, gl.FLOAT, false, stride, 0);
-      gl.enableVertexAttribArray(pvAttrs.aStyle);
-      gl.vertexAttribPointer(pvAttrs.aStyle, 4, gl.FLOAT, false, stride, 16);
-      gl.enableVertexAttribArray(pvAttrs.aExtra);
-      gl.vertexAttribPointer(pvAttrs.aExtra, 4, gl.FLOAT, false, stride, 32);
-
-      gl.uniform4f(pvUniforms.uCamera, camX, camY, camZ, camPitch);
-      gl.uniform4f(pvUniforms.uLens, focal, aspect, heightPx, maxPointSize);
-      gl.uniform4f(pvUniforms.uAction, tClock, bloomMix, flyMix, isReduced ? 0 : mouseSmooth);
-      gl.uniform2f(pvUniforms.uState, settleMix, aspect);
-      gl.uniform2f(pvUniforms.uAim, ax, ay);
-      gl.uniform1i(pvUniforms.uImage, 0);
-
-      const bSmooth = bloomMix * bloomMix * (3 - 2 * bloomMix);
-      const splitZ = SAKURA_Z - bSmooth * 0.85 - 0.65 - bSmooth * 1.45;
-      const splitIdx = findSplitIndex(splitZ);
-
-      drawPointSlice(0, splitIdx);
-
-      gl.disableVertexAttribArray(pvAttrs.aBase);
-      gl.disableVertexAttribArray(pvAttrs.aStyle);
-      gl.disableVertexAttribArray(pvAttrs.aExtra);
-
-      // 3. Central 3D Curved Luminous Lotus Blossom (premultiplied AA on transparent foreground canvas)
+      gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-      gl.clear(gl.DEPTH_BUFFER_BIT);
+
+      // 2. Full Meadow Layer (all foliage strictly behind flowers, true 3D pass)
+      gl.disable(gl.DEPTH_TEST);
+      gl.depthMask(false);
+      if (meadowCount > 0) {
+        drawPvRange(meadowEbo, meadowCount, 0);
+      }
+
+      // 2.5 Screen-Blend Optical Pastel Sakura Pink Back Halo Behind Lotus Blossom
+      gl.blendFunc(gl.ONE_MINUS_DST_COLOR, gl.ONE);
+      drawGlowBillboard(
+        SAKURA_X,
+        anchorY + (2.35 - 0.90 * bloomMix) * sharedScale,
+        SAKURA_Z,
+        (3.8 + 5.2 * bloomMix) * sharedScale,
+        1.0, 0.62, 0.76, 0.34 + 0.52 * bloomMix,
+        1.0, 0.48, 0.66, 5.2
+      );
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+
+      // 3. Central 3D Curved Luminous Lotus Blossom + Sculpted 3D Stamen Heart & Filaments (shared Z-buffer + stencil)
+      gl.depthMask(true);
+      gl.clearDepth(1.0);
+      if (useFrontDepth) {
+        gl.stencilMask(0xff);
+        gl.clearStencil(0);
+        gl.clear(gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
+        gl.enable(gl.STENCIL_TEST);
+        gl.stencilFunc(gl.ALWAYS, 1, 0xff);
+        gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
+      } else {
+        gl.disable(gl.STENCIL_TEST);
+        gl.clear(gl.DEPTH_BUFFER_BIT);
+      }
       gl.enable(gl.DEPTH_TEST);
       gl.useProgram(sakuraMeshProg);
       gl.bindBuffer(gl.ARRAY_BUFFER, sakuraMesh.buffer);
@@ -2006,58 +3029,141 @@ export function createLotusScene(canvas, options) {
       gl.enableVertexAttribArray(smAttrs.aPetalDim);
       gl.vertexAttribPointer(smAttrs.aPetalDim, 4, gl.FLOAT, false, 32, 16);
 
-      gl.uniform4f(smUniforms.uCamera, camX, camY, camZ, camPitch);
+      gl.uniform3f(smUniforms.uCamPos, camX, camY, camZ);
+      gl.uniformMatrix3fv(smUniforms.uViewMat, false, viewMat);
       gl.uniform4f(smUniforms.uLens, focal, aspect, heightPx, maxPointSize);
-      gl.uniform4f(smUniforms.uAction, tClock, bloomMix, flyMix, isReduced ? 0 : mouseSmooth);
+      gl.uniform4f(smUniforms.uAction, tClock, bloomMix, dCurve, isReduced ? 0 : mouseSmooth);
       gl.uniform2f(smUniforms.uState, settleMix, aspect);
       gl.uniform2f(smUniforms.uAim, ax, ay);
       gl.uniform1f(smUniforms.uSettle, settleMix);
 
-      if (settleMix < 0.35) {
+      gl.depthMask(true);
+      gl.depthFunc(gl.LESS);
+      gl.uniform1f(smUniforms.uAaPass, 0.0);
+      gl.drawElements(gl.TRIANGLES, sakuraMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+      gl.depthMask(false);
+      gl.depthFunc(gl.LEQUAL);
+      gl.uniform1f(smUniforms.uAaPass, 1.0);
+      gl.drawElements(gl.TRIANGLES, sakuraMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+      if (useFrontDepth) {
+        gl.colorMask(false, false, false, false);
         gl.depthMask(true);
         gl.depthFunc(gl.LESS);
-        gl.uniform1f(smUniforms.uAaPass, 0.0);
-        gl.drawElements(gl.TRIANGLES, sakuraMesh.indexCount, gl.UNSIGNED_SHORT, 0);
-
-        gl.depthMask(false);
-        gl.depthFunc(gl.LEQUAL);
         gl.uniform1f(smUniforms.uAaPass, 1.0);
         gl.drawElements(gl.TRIANGLES, sakuraMesh.indexCount, gl.UNSIGNED_SHORT, 0);
-        gl.depthFunc(gl.LESS);
-      } else {
-        gl.depthMask(false);
-        gl.uniform1f(smUniforms.uAaPass, 2.0);
-        gl.drawElements(gl.TRIANGLES, sakuraMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        gl.colorMask(true, true, true, true);
       }
+      gl.depthFunc(gl.LESS);
 
       gl.disableVertexAttribArray(smAttrs.aPetalUV);
       gl.disableVertexAttribArray(smAttrs.aPetalDim);
+
+      // 3.5 Sculpted 3D Lotus Receptacle Dome + 3-Ring Camera-Billboarded Stamen + Calyx Base, Stem & Sepals
+      if (bloomMix > 0.08) {
+        gl.useProgram(stamenProg);
+        gl.bindBuffer(gl.ARRAY_BUFFER, stamenMesh.buffer);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, stamenMesh.indexBuffer);
+        gl.enableVertexAttribArray(stAttrs.aPart);
+        gl.vertexAttribPointer(stAttrs.aPart, 4, gl.FLOAT, false, 32, 0);
+        gl.enableVertexAttribArray(stAttrs.aGeom);
+        gl.vertexAttribPointer(stAttrs.aGeom, 4, gl.FLOAT, false, 32, 16);
+
+        gl.uniform3f(stUniforms.uCamPos, camX, camY, camZ);
+        gl.uniformMatrix3fv(stUniforms.uViewMat, false, viewMat);
+        gl.uniform4f(stUniforms.uLens, focal, aspect, heightPx, maxPointSize);
+        gl.uniform4f(stUniforms.uAction, tClock, bloomMix, dCurve, isReduced ? 0 : mouseSmooth);
+        gl.uniform2f(stUniforms.uState, settleMix, aspect);
+        gl.uniform2f(stUniforms.uAim, ax, ay);
+        gl.uniform1f(stUniforms.uSettle, settleMix);
+
+        gl.depthMask(true);
+        gl.depthFunc(gl.LEQUAL);
+        gl.uniform1f(stUniforms.uAaPass, 0.0);
+        gl.drawElements(gl.TRIANGLES, stamenMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+        gl.depthMask(false);
+        gl.depthFunc(gl.LEQUAL);
+        gl.uniform1f(stUniforms.uAaPass, 1.0);
+        gl.drawElements(gl.TRIANGLES, stamenMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        gl.depthFunc(gl.LESS);
+
+        gl.disableVertexAttribArray(stAttrs.aPart);
+        gl.disableVertexAttribArray(stAttrs.aGeom);
+      }
+
+      if (useFrontDepth) {
+        gl.disable(gl.STENCIL_TEST);
+      }
+
+      // 3.8 Screen-Blend Pastel Sakura Pink Optical Petal Bloom + Radiant Golden Stamen Glow
+      gl.disable(gl.DEPTH_TEST);
+      gl.depthMask(false);
+      gl.blendFunc(gl.ONE_MINUS_DST_COLOR, gl.ONE);
+      const pinkBloomOp = Math.min(1, Math.max(0, (bloomMix - 0.15) / 0.80)) * 0.11;
+      if (pinkBloomOp > 0.004) {
+        drawGlowBillboard(
+          SAKURA_X,
+          anchorY + 1.35 * sharedScale,
+          SAKURA_Z,
+          3.2 * sharedScale,
+          1.0, 0.48, 0.66, pinkBloomOp,
+          1.0, 0.40, 0.60, 7.2
+        );
+      }
+      const stamenGlowOp = Math.min(1, Math.max(0, (bloomMix - 0.20) / 0.70)) * 0.36;
+      if (stamenGlowOp > 0.004) {
+        drawGlowBillboard(
+          SAKURA_X,
+          anchorY + 1.35 * sharedScale,
+          SAKURA_Z,
+          1.80 * sharedScale,
+          1.0, 0.84, 0.28, stamenGlowOp,
+          1.0, 0.64, 0.14, 9.0
+        );
+      }
+      const mistOp = Math.min(1, Math.max(0, (bloomMix - 0.28) / 0.67)) * 0.11;
+      if (mistOp > 0.004) {
+        drawGlowBillboard(
+          SAKURA_X,
+          anchorY + 2.0 * sharedScale,
+          SAKURA_Z,
+          2.4 * sharedScale,
+          1.0, 0.80, 0.36, mistOp,
+          1.0, 0.56, 0.70, 9.5
+        );
+      }
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+
+      // 4. Stamen Pollen Glints Only (strictly above lotus crown, zero flowerbed overlap)
+      if (coreCount > 0 && bloomMix > 0.2) {
+        gl.enable(gl.DEPTH_TEST);
+        gl.depthMask(false);
+        gl.depthFunc(gl.LESS);
+        drawPvRange(coreEbo, coreCount, 0);
+      }
+
+      // 4.5 True 3D Stencil-Masked Foreground Flowerbed (genuine camera depth everywhere, parted cleanly around open petals)
+      if (useFrontDepth) {
+        gl.enable(gl.DEPTH_TEST);
+        gl.depthMask(false);
+        gl.depthFunc(gl.LESS);
+        gl.enable(gl.STENCIL_TEST);
+        gl.stencilFunc(gl.EQUAL, 1, 0xff);
+        gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
+        gl.stencilMask(0x00);
+        if (bloomMix > 0.36 && meadowFlowerStart < meadowCount) {
+          drawPvRange(meadowEbo, meadowCount - meadowFlowerStart, meadowFlowerStart * 2, 1.0, 1.0);
+        } else {
+          drawPvRange(meadowEbo, meadowCount, 0, 1.0, 1.0);
+        }
+        gl.disable(gl.STENCIL_TEST);
+      }
+
       gl.depthMask(true);
       gl.disable(gl.DEPTH_TEST);
 
-      // 4. Foreground blurred bokeh wildflowers, calyx cushion, stamens, pollen, fireflies
-      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-      gl.useProgram(pvProg);
-      gl.bindBuffer(gl.ARRAY_BUFFER, particleBuf);
-      gl.enableVertexAttribArray(pvAttrs.aBase);
-      gl.vertexAttribPointer(pvAttrs.aBase, 4, gl.FLOAT, false, stride, 0);
-      gl.enableVertexAttribArray(pvAttrs.aStyle);
-      gl.vertexAttribPointer(pvAttrs.aStyle, 4, gl.FLOAT, false, stride, 16);
-      gl.enableVertexAttribArray(pvAttrs.aExtra);
-      gl.vertexAttribPointer(pvAttrs.aExtra, 4, gl.FLOAT, false, stride, 32);
-
-      drawPointSlice(splitIdx, particleCount - splitIdx);
-
-      gl.disableVertexAttribArray(pvAttrs.aBase);
-      gl.disableVertexAttribArray(pvAttrs.aStyle);
-      gl.disableVertexAttribArray(pvAttrs.aExtra);
-
-      const settling =
-        Math.abs(bloomTarget - bloomMix) > 0.002 ||
-        Math.abs(flyTarget - flyMix) > 0.002 ||
-        Math.abs(settleTarget - settleMix) > 0.002;
-
-      if (!paused && !isBackgrounded() && (!isReduced || settling)) {
+      if (!paused && !isBackgrounded() && (!isReduced || animating)) {
         wake();
       }
     }
@@ -2141,7 +3247,6 @@ export function createLotusScene(canvas, options) {
     const ro = new ResizeObserver(wake);
     ro.observe(canvas);
 
-    let flyDownTimer = 0;
     let startupWatchTimer = 0;
 
     buildScene().catch(() => {
@@ -2153,24 +3258,33 @@ export function createLotusScene(canvas, options) {
         clearTimeout(flyDownTimer);
         flyDownTimer = 0;
         pendingFlyDown = false;
+        fallElapsed = 0;
         if (open) {
           bloomTarget = 1;
-          flyTarget = 1.05;
+          diveTarget = 1;
+          flyTarget = 0.76;
           flyDownTimer = setTimeout(() => {
             flyDownTimer = 0;
             if (!disposed && bloomTarget === 1) {
-              flyTarget = 0.24;
+              fallElapsed = 0;
+              flyTarget = 0.22;
               settleTarget = 1;
               wake();
             }
-          }, 900);
+          }, 2300);
         } else {
-          // Return directly without flying upward: smoothly settle back into normal flowerbed
+          // Reverse swoop cleanly back out to the intro valley
           bloomTarget = 0;
+          diveTarget = 0;
           settleTarget = 0;
           flyTarget = 0.0;
+          flyStage0 = Math.min(flyStage0, flyMix);
           flyStage1 = Math.min(flyStage1, flyMix);
         }
+        wake();
+      },
+      setTabIndex(idx) {
+        tabYawTarget = (Number.isFinite(idx) ? idx : 0) * 0.22;
         wake();
       },
       setTheme() {},
