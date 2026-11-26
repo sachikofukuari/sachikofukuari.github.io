@@ -484,7 +484,7 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice, useUint32 = true 
     await yieldSlice();
     const [bx, bz, k, w, d, litBoost, yBoost = 0, is360 = 0] = beds[b];
     const families = is360
-      ? Math.min(24, Math.round(w * d * 5.2 + 6))
+      ? Math.min(18, Math.round(w * d * 4.2 + 4))
       : bz < 6.5
         ? Math.min(30, Math.round(w * d * 7.2 + 8))
         : bz < 9.5
@@ -508,7 +508,7 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice, useUint32 = true 
         : (0.29 + R() * 0.25) * (fz > 14 ? 1.0 + (fz - 14) * 0.044 : 1.0);
       const lf = (0.90 + R() * 0.12) * litBoost;
       const clusterCount = is360
-        ? 3 + Math.floor(R() * 3)
+        ? 2 + Math.floor(R() * 4)
         : bz < 9.5
           ? 3 + Math.floor(R() * 4)
           : bz < 22.0
@@ -525,7 +525,7 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice, useUint32 = true 
         const yy = baseY + 0.24 + yBoost + R() * 0.22;
         const flSize = baseFl * (0.58 + R() * 0.76);
         if (!insideStaticView(xx, yy, zz, flSize)) continue;
-        if (R() < (is360 ? 0.10 : 0.396)) continue;
+        if (R() < 0.396) continue;
         const kk = R() < 0.74 ? k : R() < 0.65 ? 6 + Math.floor(R() * 2) : (k + 2) % 6;
         const tileId = 16 + kk + (R() < 0.5 ? 8 : 0);
         const ang = Math.atan2(zz - SAKURA_Z, xx - SAKURA_X);
