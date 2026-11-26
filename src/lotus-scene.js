@@ -156,6 +156,7 @@ export function createLotusScene(canvas, options) {
   const bucketCounts = new Int32Array(256);
   const bucketOffsets = new Int32Array(256);
   let hasSortedOnce = false;
+  let wasAnimating = false;
   let lastSortedYaw = 0;
   let lastSortedElev = 0;
   let lastSortedDist = 0;
@@ -172,7 +173,6 @@ export function createLotusScene(canvas, options) {
       meadowPosY,
       meadowPosZ,
       meadowLayerBias,
-      meadowBandOffset,
       meadowOrigIdx,
       sortedMeadow,
       depthKeys,
@@ -182,15 +182,14 @@ export function createLotusScene(canvas, options) {
     const fx = viewMat[2];
     const fy = viewMat[5];
     const fz = viewMat[8];
-    const depthScale15 = 32767 / 84.0;
+    const depthScale16 = 65535 / 84.0;
 
     bucketCounts.fill(0);
     for (let k = 0; k < meadowCount; k++) {
       const dep = (meadowPosX[k] - camX) * fx + (meadowPosY[k] - camY) * fy + (meadowPosZ[k] - camZ) * fz - meadowLayerBias[k];
-      let d15 = 32767 - (((dep + 4.0) * depthScale15) | 0);
-      if (d15 < 0) d15 = 0;
-      else if (d15 > 32767) d15 = 32767;
-      const k16 = meadowBandOffset[k] | d15;
+      let k16 = 65535 - (((dep + 4.0) * depthScale16) | 0);
+      if (k16 < 0) k16 = 0;
+      else if (k16 > 65535) k16 = 65535;
       depthKeys[k] = k16;
       bucketCounts[k16 & 255]++;
     }
@@ -455,7 +454,7 @@ export function createLotusScene(canvas, options) {
     const nearGround = Math.max(0, Math.min(1, (flyMix - flyTarget) / 0.34));
     const groundCushion = 0.61 + 0.53 * nearGround;
     const fallRate = 0.28 + (groundCushion - 0.28) * fallRamp;
-    const flyRate = flyTarget > flyStage0 ? 4.4 : flyTarget > 0.05 ? fallRate : 2.1;
+    const flyRate = flyTarget > flyStage0 ? 4.4 : flyTarget > 0.05 ? fallRate : 3.6;
     const flyEase = isReduced ? 1 : 1 - Math.exp(-dt * flyRate);
     const settleRate = settleTarget > settleMix ? 0.10 + 0.61 * fallRamp : 1.55;
 
@@ -596,25 +595,32 @@ export function createLotusScene(canvas, options) {
     const anchorY = 0.42 + bloomLift;
     const sharedScale = 1.0 + Math.min(1, Math.max(0, bloomMix / 0.92)) * 0.40 + settleMix * 0.08;
 
-    const baseYaw = dCurve * 1.62 + tabYawMix * dCurve;
-    const baseElev = introElev + (0.42 - introElev) * Math.pow(dCurve, 0.92);
-    const baseDist = 8.85 + (openDist - 8.85) * dCurve + S(dCurve * Math.PI) * 1.15;
-    const sortThreshold = animating ? 0.024 : 0.001;
+    const sortYaw = animating ? orbitYaw : dCurve * 1.62 + tabYawMix * dCurve;
+    const sortElev = animating ? elev : introElev + (0.42 - introElev) * Math.pow(dCurve, 0.92);
+    const sortDist = animating ? dist : 8.85 + (openDist - 8.85) * dCurve + S(dCurve * Math.PI) * 1.15;
+    const sortThreshold = animating ? 0.0005 : 0.001;
+    const distThreshold = animating ? 0.01 : 0.04;
     if (
       !hasSortedOnce ||
-      Math.abs(baseYaw - lastSortedYaw) > sortThreshold ||
-      Math.abs(baseElev - lastSortedElev) > sortThreshold ||
-      Math.abs(baseDist - lastSortedDist) > (animating ? 0.30 : 0.04)
+      wasAnimating !== animating ||
+      Math.abs(sortYaw - lastSortedYaw) > sortThreshold ||
+      Math.abs(sortElev - lastSortedElev) > sortThreshold ||
+      Math.abs(sortDist - lastSortedDist) > distThreshold
     ) {
-      const baseHoriz = baseDist * C(baseElev);
-      const baseCamX = targetX + S(baseYaw) * baseHoriz;
-      const baseCamZ = targetZ - C(baseYaw) * baseHoriz;
-      const baseCamY = targetY + baseDist * S(baseElev);
-      const baseViewMat = buildViewMatrix(baseCamX, baseCamY, baseCamZ, targetX, targetY, targetZ);
-      sortMeadowByCamera(baseCamX, baseCamY, baseCamZ, baseViewMat);
-      lastSortedYaw = baseYaw;
-      lastSortedElev = baseElev;
-      lastSortedDist = baseDist;
+      if (animating) {
+        sortMeadowByCamera(camX, camY, camZ, viewMat);
+      } else {
+        const baseHoriz = sortDist * C(sortElev);
+        const baseCamX = targetX + S(sortYaw) * baseHoriz;
+        const baseCamZ = targetZ - C(sortYaw) * baseHoriz;
+        const baseCamY = targetY + sortDist * S(sortElev);
+        const baseViewMat = buildViewMatrix(baseCamX, baseCamY, baseCamZ, targetX, targetY, targetZ);
+        sortMeadowByCamera(baseCamX, baseCamY, baseCamZ, baseViewMat);
+      }
+      wasAnimating = animating;
+      lastSortedYaw = sortYaw;
+      lastSortedElev = sortElev;
+      lastSortedDist = sortDist;
     }
 
     function drawGlowBillboard(cx, cy, cz, radius, rA, gA, bA, opA, rB, gB, bB, sharpB) {
@@ -664,7 +670,7 @@ export function createLotusScene(canvas, options) {
       gl.disableVertexAttribArray(pvAttrs.aExtra);
     }
 
-    const { meadowCount, meadowFlowerStart, coreCount } = meadow;
+    const { meadowCount, coreCount } = meadow;
     const useFrontDepth = meadowCount > 0;
 
     gl.enable(gl.BLEND);
@@ -819,11 +825,7 @@ export function createLotusScene(canvas, options) {
       gl.stencilFunc(gl.EQUAL, 1, 0xff);
       gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
       gl.stencilMask(0x00);
-      if (bloomMix > 0.36 && meadowFlowerStart < meadowCount) {
-        drawPvRange(meadowEbo, meadowCount - meadowFlowerStart, meadowFlowerStart * 2, 1.0, 1.0);
-      } else {
-        drawPvRange(meadowEbo, meadowCount, 0, 1.0, 1.0);
-      }
+      drawPvRange(meadowEbo, meadowCount, 0, 1.0, 1.0);
       gl.disable(gl.STENCIL_TEST);
     }
 

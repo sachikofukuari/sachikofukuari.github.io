@@ -285,7 +285,7 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice }) {
   // Foreground low curtain + targeted beds around and behind lotus + #contact gap anchors
   beds.push(
     [-3.0, 2.8, 2, 0.98, 0.88, 0.94],
-    [3.1, 2.9, 4, 0.98, 0.88, 0.94],
+    [3.1, 2.9, 1, 0.98, 0.88, 0.94],
     [-1.3, 2.3, 5, 0.82, 0.72, 0.94],
     [1.4, 2.4, 1, 0.82, 0.72, 0.94],
     [-0.45, 3.6, 0, 0.74, 0.68, 0.92],
@@ -303,14 +303,14 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice }) {
     [-2.1, 1.9, 0, 0.98, 0.86, 0.95],
     [2.2, 2.0, 3, 0.98, 0.86, 0.95],
     [-3.9, 2.5, 6, 1.06, 0.94, 0.95],
-    [4.0, 2.6, 4, 1.06, 0.94, 0.95],
+    [4.0, 2.6, 3, 1.06, 0.94, 0.95],
     [-0.1, 2.6, 1, 0.86, 0.78, 0.94],
     [-2.9, 3.6, 7, 1.02, 0.94, 0.95],
     [3.0, 3.7, 5, 1.02, 0.94, 0.95],
     [-1.2, 4.5, 2, 0.90, 0.84, 0.94],
     [1.3, 4.6, 6, 0.90, 0.84, 0.94],
     [-5.5, 5.2, 0, 1.12, 1.04, 0.95],
-    [5.6, 5.3, 4, 1.12, 1.04, 0.95],
+    [5.6, 5.3, 5, 1.12, 1.04, 0.95],
     [-2.35, 2.25, 2, 0.92, 0.75, 0.95, -0.04],
     [-1.85, 2.10, 6, 0.88, 0.72, 0.95, -0.06],
     [-2.85, 2.55, 0, 0.96, 0.78, 0.95, -0.05],
@@ -511,7 +511,7 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice }) {
         const yy = baseY + 0.24 + yBoost + R() * 0.22;
         const flSize = baseFl * (0.58 + R() * 0.76);
         if (!insideStaticView(xx, yy, zz, flSize)) continue;
-        if (R() < (is360 ? 0.10 : 0.195)) continue;
+        if (R() < (is360 ? 0.10 : 0.396)) continue;
         const kk = R() < 0.74 ? k : R() < 0.65 ? 6 + Math.floor(R() * 2) : (k + 2) % 6;
         const tileId = 16 + kk + (R() < 0.5 ? 8 : 0);
         const ang = Math.atan2(zz - SAKURA_Z, xx - SAKURA_X);
@@ -620,13 +620,11 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice }) {
   const meadowPosY = new Float32Array(meadowCount);
   const meadowPosZ = new Float32Array(meadowCount);
   const meadowLayerBias = new Float32Array(meadowCount);
-  const meadowBandOffset = new Uint16Array(meadowCount);
   const meadowOrigIdx = new Uint16Array(meadowCount);
   const sortedMeadow = new Uint16Array(meadowCount);
   const depthKeys = new Uint16Array(meadowCount);
   const tempKeys = new Uint16Array(meadowCount);
   const tempIdx = new Uint16Array(meadowCount);
-  let band0Count = 0;
 
   for (let k = 0; k < meadowCount; k++) {
     const idx = meadowIdxList[k];
@@ -635,9 +633,8 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice }) {
     meadowPosX[k] = pt[0];
     meadowPosY[k] = pt[1];
     meadowPosZ[k] = pt[2];
-    if (tid < 16) band0Count++;
-    meadowBandOffset[k] = tid < 16 ? 0 : 32768;
-    meadowLayerBias[k] = tid >= 32 ? 0.45 : 0.0;
+    // Bias blossoms forward of co-located grass without breaking 3D hill occlusion across distance
+    meadowLayerBias[k] = tid >= 32 ? 1.25 : tid >= 16 ? 0.85 : 0.0;
     meadowOrigIdx[k] = idx;
   }
 
@@ -646,12 +643,10 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice }) {
     coreIndices: new Uint16Array(coreIndices),
     coreCount: coreIndices.length,
     meadowCount,
-    meadowFlowerStart: band0Count,
     meadowPosX,
     meadowPosY,
     meadowPosZ,
     meadowLayerBias,
-    meadowBandOffset,
     meadowOrigIdx,
     sortedMeadow,
     depthKeys,

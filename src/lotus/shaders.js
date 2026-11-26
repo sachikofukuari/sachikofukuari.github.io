@@ -791,17 +791,18 @@ void main() {
         float landY = lAnchorY + (lYOpen + settle * 0.04 * uLand) * lScale + sin(lTilt) * 0.15;
         float landZ = 8.5 + (lROpen * lSa + lTang * lCa) * lScale - cos(lTilt) * lSa * 0.15;
 
-        float pOpen = smoothstep(0.0, 0.95, bloom);
+        float pOpen = smoothstep(0.22, 0.92, bloom);
         float flyAbove = max(0.0, fly - 0.22 * settle);
         float softAir = (flyAbove * flyAbove) / (flyAbove + 0.16);
         landedAmt = smoothstep(0.08, 0.90, settle) * (1.0 - smoothstep(0.01, 0.28, flyAbove));
 
         float swirlAmt = softAir * liftWeight;
         float calmWind = 1.0 - landedAmt;
+        float releaseArch = sin(pOpen * 3.14159265) * (1.0 - settle) * (1.0 - smoothstep(0.25, 0.65, fly));
         float windY = flex * (0.26 * cos(t * 1.05 - aBase.z * 0.26 + aBase.x * 0.30) - 0.15 * gust * gust);
-        float baseX = mix(aBase.x + (gust * flex + 0.02 * sin(t * 1.65 + ang)) * calmWind, landX, pOpen);
-        float baseZ = mix(aBase.z, landZ, pOpen);
-        float baseY = mix(aBase.y + windY * calmWind, landY, pOpen);
+        float baseX = mix(aBase.x + (gust * flex + 0.02 * sin(t * 1.65 + ang)) * calmWind, landX, pOpen) + lCa * releaseArch * 1.15;
+        float baseZ = mix(aBase.z, landZ, pOpen) + lSa * releaseArch * 1.15;
+        float baseY = mix(aBase.y + windY * calmWind, landY, pOpen) + releaseArch * 0.65;
         x = baseX + cos(radialAngle + t * 0.12) * swirlAmt * 0.75;
         z = baseZ + sin(radialAngle + t * 0.10) * swirlAmt * 0.22;
         y = baseY + swirlAmt * (3.2 + seed * 1.3);
@@ -850,7 +851,8 @@ void main() {
     float farBlur = smoothstep(32.0, 62.0, dep) * 0.72;
     float bgBokeh = smoothstep(12.0, 26.0, dep) * smoothstep(0.25, 0.95, settle) * 0.64;
     defocus = max(max(nearBlur, farBlur), bgBokeh) * (1.0 - landedAmt);
-    float nearAlpha = smoothstep(mix(0.55, 1.35, dive), mix(1.28, 3.0, dive), dep);
+    float transit = 4.0 * dive * (1.0 - dive);
+    float nearAlpha = smoothstep(mix(0.55, 1.35, dive) + transit * 0.95, mix(1.28, 3.0, dive) + transit * 1.55, dep);
     float farHorizon = 1.0 - smoothstep(62.0, 76.0, dep);
     opacity *= nearAlpha * farHorizon;
   }
