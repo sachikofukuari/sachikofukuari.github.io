@@ -190,19 +190,19 @@ function makeAtlasTile(i, tileSize, tileScale, R) {
 
   const k = (i - 16) % 8;
   const isBluePal = k >= 6;
-  const bloomHalo = c.createRadialGradient(0, 0, 8, 0, 0, 60);
+  const bloomHalo = c.createRadialGradient(0, 0, 8, 0, 0, 56);
   if (isBluePal) {
-    bloomHalo.addColorStop(0, "rgba(216, 240, 255, 0.54)");
-    bloomHalo.addColorStop(0.48, "rgba(148, 208, 255, 0.24)");
+    bloomHalo.addColorStop(0, "rgba(216, 240, 255, 0.27)");
+    bloomHalo.addColorStop(0.48, "rgba(148, 208, 255, 0.12)");
     bloomHalo.addColorStop(1, "rgba(130, 190, 255, 0)");
   } else {
-    bloomHalo.addColorStop(0, "rgba(255, 218, 238, 0.52)");
-    bloomHalo.addColorStop(0.48, "rgba(255, 166, 214, 0.23)");
+    bloomHalo.addColorStop(0, "rgba(255, 218, 238, 0.26)");
+    bloomHalo.addColorStop(0.48, "rgba(255, 166, 214, 0.115)");
     bloomHalo.addColorStop(1, "rgba(255, 140, 204, 0)");
   }
   c.fillStyle = bloomHalo;
   c.beginPath();
-  c.arc(0, 0, 60, 0, TAU);
+  c.arc(0, 0, 56, 0, TAU);
   c.fill();
 
   if (k === 2) {

@@ -998,7 +998,7 @@ void main() {
     vec3 blueTint = mix(vec3(0.94, 1.00, 1.08), vec3(0.76, 0.93, 1.16), vDepthFx.y);
     vec3 backTint = mix(pinkTint, blueTint, isBlue);
     rgb = texel.rgb * vColor.x * backTint;
-    float bloomGlow = vBot.w * (0.30 + vColor.y * 0.34 + vDepthFx.y * 0.32);
+    float bloomGlow = vBot.w * (0.15 + vColor.y * 0.17 + vDepthFx.y * 0.16);
     vec3 glowCol = mix(vec3(0.38, 0.16, 0.28), vec3(0.16, 0.30, 0.46), isBlue);
     rgb += glowCol * texel.a * bloomGlow * min(vColor.x, 1.15);
     rgb += vec3(0.04, 0.01, 0.03) * texel.a * vDepthFx.y * (1.0 - vBot.w);
@@ -1017,7 +1017,7 @@ void main() {
     rgb = mix(rgb, mistCol * texel.a, vDepthFx.x);
   }
   vec3 pastelAuraCol = mix(vec3(1.00, 0.54, 0.78), vec3(0.50, 0.80, 1.00), isBlue);
-  float auraLift = haloAura * (1.0 - texel.a * 0.72) * (0.20 + vColor.y * 0.14) * clamp(vColor.x, 0.35, 1.15) * (1.0 - vDepthFx.x);
+  float auraLift = haloAura * (1.0 - texel.a * 0.72) * (0.10 + vColor.y * 0.07) * clamp(vColor.x, 0.35, 1.15) * (1.0 - vDepthFx.x);
   gl_FragColor = vec4((rgb + pastelAuraCol * auraLift) * vColor.w, texel.a * vColor.w);
 }`;
 }
