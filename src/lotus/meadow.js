@@ -238,31 +238,11 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice, useUint32 = true 
     pushGrass(x, y, z, 0.78 + R() * 0.98, 0.36 + 0.76 * R(), 0.0);
   }
 
-  // #contact left-edge seam foliage (x in [3.2, 11.2], z in [-6.2, -0.4], off-screen from Intro)
-  const contactLeftSeamFoliage = lowEnd ? 220 : 360;
-  for (let i = 0; i < contactLeftSeamFoliage; i++) {
-    const x = 3.2 + R() * 8.0;
-    const z = -6.2 + R() * 5.8;
-    if (inIntroCorridor(x, z) || !insideMeadowFrustum(x, z, false)) continue;
-    const y = surroundFloor(x, z) - 0.04 + R() * 0.28;
-    pushGrass(x, y, z, 0.80 + R() * 1.00, 0.36 + 0.76 * R(), 0.0);
-  }
-
-  // #contact mid-left & upper-left hillside foliage (x in [2.0, 10.6], z in [-15.4, -4.6], behind Intro camera)
-  const contactLeftMidFoliage = lowEnd ? 220 : 360;
-  for (let i = 0; i < contactLeftMidFoliage; i++) {
-    const x = 2.0 + R() * 8.6;
-    const z = -15.4 + R() * 10.8;
-    if (inIntroCorridor(x, z) || !insideMeadowFrustum(x, z, false)) continue;
-    const y = surroundFloor(x, z) - 0.04 + R() * 0.28;
-    pushGrass(x, y, z, 0.84 + R() * 1.04, 0.36 + 0.76 * R(), 0.0);
-  }
-
-  // #contact far-bottom-left edge foliage (x in [7.2, 11.0], z in [0.4, 4.6], off-screen from Intro)
-  const contactFarBottomLeftFoliage = lowEnd ? 90 : 140;
-  for (let i = 0; i < contactFarBottomLeftFoliage; i++) {
-    const x = 7.2 + R() * 3.8;
-    const z = 0.4 + R() * 4.2;
+  // #contact light far-left edge patch (x in [5.5, 9.8], z in [-3.6, -1.0], off-screen from Intro)
+  const contactLeftEdgeFoliage = lowEnd ? 75 : 120;
+  for (let i = 0; i < contactLeftEdgeFoliage; i++) {
+    const x = 5.5 + R() * 4.3;
+    const z = -3.6 + R() * 2.6;
     if (inIntroCorridor(x, z) || !insideMeadowFrustum(x, z, false)) continue;
     const y = surroundFloor(x, z) - 0.04 + R() * 0.26;
     pushGrass(x, y, z, 0.78 + R() * 0.96, 0.36 + 0.76 * R(), 0.0);
@@ -407,25 +387,10 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice, useUint32 = true 
     [5.20, 0.90, 0, 1.18, 1.12, 0.96, 0.26, 1],
     [6.40, 2.50, 6, 1.24, 1.18, 0.96, 0.26, 1],
     [7.50, 4.00, 2, 1.28, 1.20, 0.96, 0.28, 1],
-    // #contact left-edge seam anchors (x in [4.6, 8.8], z in [-3.3, -1.5], off-screen from Intro)
-    [4.60, -2.40, 2, 1.24, 1.18, 0.96, 0.28, 1],
-    [6.10, -2.90, 6, 1.30, 1.22, 0.96, 0.28, 1],
-    [7.60, -3.30, 0, 1.32, 1.24, 0.96, 0.30, 1],
-    [8.80, -2.10, 7, 1.32, 1.24, 0.96, 0.28, 1],
-    [7.20, -1.50, 1, 1.28, 1.20, 0.96, 0.28, 1],
-    // #contact mid-left, upper-left & bottom-left edge anchors (strictly behind/off-screen from Intro)
-    [7.60, -8.80, 0, 1.34, 1.26, 0.96, 0.34, 1],
-    [6.10, -8.10, 6, 1.32, 1.24, 0.96, 0.34, 1],
-    [4.60, -7.40, 2, 1.28, 1.20, 0.96, 0.32, 1],
-    [7.90, -6.50, 7, 1.34, 1.26, 0.96, 0.32, 1],
-    [6.30, -5.90, 1, 1.32, 1.24, 0.96, 0.30, 1],
-    [4.80, -5.40, 4, 1.28, 1.20, 0.96, 0.30, 1],
-    [6.20, -13.90, 2, 1.38, 1.30, 0.96, 0.42, 1],
-    [4.40, -14.10, 6, 1.36, 1.28, 0.96, 0.42, 1],
-    [2.40, -0.80, 0, 1.22, 1.14, 0.96, 0.26, 1],
-    [1.10, -0.60, 7, 1.18, 1.12, 0.96, 0.26, 1],
-    [9.10, 1.50, 2, 1.28, 1.20, 0.96, 0.28, 1],
-    [8.60, 2.80, 6, 1.28, 1.20, 0.96, 0.28, 1],
+    // #contact far-left pocket anchors (x in [6.5, 8.9], z in [-2.7, -1.7], off-screen from Intro)
+    [6.50, -2.50, 2, 1.02, 0.98, 0.96, 0.26, 1],
+    [7.90, -2.70, 6, 1.04, 1.00, 0.96, 0.26, 1],
+    [8.90, -1.70, 0, 1.02, 0.98, 0.96, 0.26, 1],
     // #contact right-of-lotus shoulder anchors (lower-left Intro hillside)
     [-4.80, 10.60, 2, 1.14, 1.04, 0.96, 0.38, 0],
     [-5.90, 12.20, 6, 1.20, 1.10, 0.96, 0.42, 0],
@@ -463,14 +428,6 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice, useUint32 = true 
     // #contact bottom-left corner bands (x in [4.0, 8.8], z in [-1.2, 5.4], off-screen from Intro)
     { steps: 10, x0: 4.0, x1: 8.8, z0: -1.2, z1: 3.6, yBoost: 0.24, pal: [0, 6, 2, 7, 4], is360: 1 },
     { steps: 9, x0: 4.8, x1: 8.6, z0: 1.2, z1: 5.4, yBoost: 0.28, pal: [2, 7, 1, 6, 5], is360: 1 },
-    // #contact left-edge seam bands (x in [3.4, 10.8], z in [-4.8, -0.5], off-screen from Intro)
-    { steps: 11, x0: 3.4, x1: 10.6, z0: -4.8, z1: -1.6, yBoost: 0.28, pal: [0, 6, 2, 7, 1], is360: 1 },
-    { steps: 10, x0: 3.8, x1: 10.8, z0: -2.8, z1: -0.5, yBoost: 0.26, pal: [2, 7, 4, 6, 0], is360: 1 },
-    // #contact mid-left, upper-left & bottom-left edge fill bands (strictly behind/off-screen from Intro)
-    { steps: 12, x0: 2.6, x1: 9.6, z0: -7.2, z1: -4.6, yBoost: 0.32, pal: [0, 6, 2, 7, 1], is360: 1 },
-    { steps: 12, x0: 2.4, x1: 9.4, z0: -10.2, z1: -7.4, yBoost: 0.36, pal: [2, 7, 4, 6, 0], is360: 1 },
-    { steps: 10, x0: 2.0, x1: 8.4, z0: -15.0, z1: -12.4, yBoost: 0.44, pal: [0, 6, 1, 7, 2], is360: 1 },
-    { steps: 8, x0: 7.4, x1: 10.4, z0: 0.6, z1: 4.2, yBoost: 0.28, pal: [2, 7, 0, 6, 4], is360: 1 },
     // #contact right-of-lotus shoulder bands (x in [-8.6, -3.8], z in [9.8, 16.4])
     { steps: 9, x0: -8.6, x1: -4.2, z0: 16.4, z1: 10.2, yBoost: 0.42, pal: [0, 6, 2, 7, 1], is360: 0 },
     { steps: 8, x0: -7.4, x1: -3.8, z0: 14.8, z1: 9.8, yBoost: 0.36, pal: [2, 7, 4, 6, 0], is360: 0 },

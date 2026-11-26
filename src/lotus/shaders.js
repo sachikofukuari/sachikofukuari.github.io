@@ -813,8 +813,9 @@ void main() {
         y = baseY + swirlAmt * (3.2 + seed * 1.3);
         scatterGlow = softAir * 0.72;
       } else {
-        float frontMask = 1.0 - smoothstep(4.5, 8.2, aBase.z);
-        float centerCorridor = exp(-aBase.x * aBase.x * 0.35) * frontMask;
+        float frontMask = smoothstep(0.8, 2.6, aBase.z) * (1.0 - smoothstep(4.5, 8.2, aBase.z));
+        float launchPart = smoothstep(0.0, 0.42, max(0.0, fly - 0.22 * settle));
+        float centerCorridor = exp(-aBase.x * aBase.x * 0.35) * frontMask * launchPart;
         float partDir = (aBase.x + (seed - 0.5) * 0.18) >= 0.0 ? 1.0 : -1.0;
         float hoverBob = settle * (0.14 * sin(t * 0.85 + radialAngle * 2.0) + 0.08 * cos(t * 0.55 + seed * 12.0));
         float rise = (fly * (0.28 + blossom * 2.45) + hoverBob * (0.35 + blossom * 0.65)) * liftWeight;
@@ -826,7 +827,7 @@ void main() {
         float underMask = (1.0 - smoothstep(4.8, 7.2, rBase)) * smoothstep(0.10, 0.85, bloom);
         float uApprox = clamp((rBase - 0.9) / 4.6, 0.0, 1.0);
         float lotusFloorY = 0.42 + smoothstep(0.0, 1.0, bloom) * 2.10;
-        float restLiftY = (0.22 * (0.28 + blossom * 2.45)) * liftWeight * yLiftMult;
+        float restLiftY = (0.22 * (0.28 + blossom * 2.45)) * liftWeight * (1.05 + seed * 1.15);
         float underCeil = lotusFloorY - 0.56 + uApprox * uApprox * 1.56 - restLiftY;
         float diffU = underCeil - y;
         float smoothMinY = underCeil - 0.5 * (diffU + sqrt(diffU * diffU + 0.36));
