@@ -190,19 +190,19 @@ function makeAtlasTile(i, tileSize, tileScale, R) {
 
   const k = (i - 16) % 8;
   const isBluePal = k >= 6;
-  const bloomHalo = c.createRadialGradient(0, 0, 8, 0, 0, 58);
+  const bloomHalo = c.createRadialGradient(0, 0, 8, 0, 0, 60);
   if (isBluePal) {
-    bloomHalo.addColorStop(0, "rgba(214, 238, 255, 0.48)");
-    bloomHalo.addColorStop(0.45, "rgba(154, 206, 255, 0.20)");
+    bloomHalo.addColorStop(0, "rgba(216, 240, 255, 0.54)");
+    bloomHalo.addColorStop(0.48, "rgba(148, 208, 255, 0.24)");
     bloomHalo.addColorStop(1, "rgba(130, 190, 255, 0)");
   } else {
-    bloomHalo.addColorStop(0, "rgba(255, 214, 236, 0.46)");
-    bloomHalo.addColorStop(0.45, "rgba(255, 162, 212, 0.19)");
+    bloomHalo.addColorStop(0, "rgba(255, 218, 238, 0.52)");
+    bloomHalo.addColorStop(0.48, "rgba(255, 166, 214, 0.23)");
     bloomHalo.addColorStop(1, "rgba(255, 140, 204, 0)");
   }
   c.fillStyle = bloomHalo;
   c.beginPath();
-  c.arc(0, 0, 58, 0, TAU);
+  c.arc(0, 0, 60, 0, TAU);
   c.fill();
 
   if (k === 2) {
@@ -357,7 +357,7 @@ function makeAtlasTile(i, tileSize, tileScale, R) {
   return tile;
 }
 
-export async function buildBotanicalAtlas(gl, R, yieldSlice) {
+export async function buildBotanicalAtlas(gl, R, yieldSlice, useMipmaps = true) {
   const maxTexSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 2048;
   const atlasSize = maxTexSize >= 2048 ? 2048 : 1024;
   const tileSize = atlasSize / 8;
@@ -388,8 +388,14 @@ export async function buildBotanicalAtlas(gl, R, yieldSlice) {
   gl.bindTexture(gl.TEXTURE_2D, atlasTex);
   gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlas);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-  gl.generateMipmap(gl.TEXTURE_2D);
-  return atlasTex;
+  if (useMipmaps) {
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.generateMipmap(gl.TEXTURE_2D);
+  } else {
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  }
+  return { texture: atlasTex, tileSize };
 }

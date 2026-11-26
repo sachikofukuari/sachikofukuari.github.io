@@ -12,12 +12,12 @@ import {
   BG_VERT,
   GLOW_FRAG,
   GLOW_VERT,
-  PV_FRAG,
   PV_VERT,
   SAKURA_VERT,
   STAMEN_FRAG,
   STAMEN_VERT,
   compileProgram,
+  getPvFrag,
   getSakuraFrag,
 } from "./lotus/shaders.js";
 
@@ -103,6 +103,8 @@ export function createLotusScene(canvas, options) {
       : null;
   const bgGl = skyGl || gl;
   const hasDerivatives = Boolean(gl.getExtension("OES_standard_derivatives"));
+  const hasUint32Index = Boolean(gl.getExtension("OES_element_index_uint"));
+  let hasTexLod = Boolean(gl.getExtension("EXT_shader_texture_lod"));
 
   let seed = 4827193;
   const R = () => {
@@ -126,7 +128,14 @@ export function createLotusScene(canvas, options) {
   const sakuraMeshProg = compileProgram(gl, SAKURA_VERT, getSakuraFrag(hasDerivatives));
   const stamenProg = compileProgram(gl, STAMEN_VERT, STAMEN_FRAG);
   const glowProg = compileProgram(gl, GLOW_VERT, GLOW_FRAG);
-  const pvProg = compileProgram(gl, PV_VERT, PV_FRAG);
+  let pvProg;
+  try {
+    pvProg = compileProgram(gl, PV_VERT, getPvFrag(hasTexLod));
+  } catch (err) {
+    if (!hasTexLod) throw err;
+    hasTexLod = false;
+    pvProg = compileProgram(gl, PV_VERT, getPvFrag(false));
+  }
 
   function makeBufferOn(targetGl, data) {
     const b = targetGl.createBuffer();
@@ -146,6 +155,7 @@ export function createLotusScene(canvas, options) {
   const glowQuadBuf = makeBufferOn(gl, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]));
 
   let atlasTex = null;
+  let atlasTileSize = 256;
   let particleBuf = null;
   let meadowEbo = null;
   let coreEbo = null;
@@ -217,7 +227,14 @@ export function createLotusScene(canvas, options) {
     }
     for (let k = 0; k < meadowCount; k++) {
       const dst = bucketOffsets[tempKeys[k] >>> 8]++;
-      sortedMeadow[dst] = tempIdx[k];
+      const v = tempIdx[k] << 2;
+      const o = dst * 6;
+      sortedMeadow[o] = v;
+      sortedMeadow[o + 1] = v + 1;
+      sortedMeadow[o + 2] = v + 2;
+      sortedMeadow[o + 3] = v + 2;
+      sortedMeadow[o + 4] = v + 1;
+      sortedMeadow[o + 5] = v + 3;
     }
 
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, meadowEbo);
@@ -253,7 +270,9 @@ export function createLotusScene(canvas, options) {
   let startupWatchTimer = 0;
 
   async function buildScene() {
-    atlasTex = await buildBotanicalAtlas(gl, R, yieldSlice);
+    const atlasData = await buildBotanicalAtlas(gl, R, yieldSlice, hasTexLod);
+    atlasTex = atlasData.texture;
+    atlasTileSize = atlasData.tileSize;
 
     const sakuraData = buildSakuraMeshData(R);
     sakuraMesh = {
@@ -269,7 +288,7 @@ export function createLotusScene(canvas, options) {
       indexCount: stamenData.indexCount,
     };
 
-    meadow = await buildMeadowData({ lowEnd, R, yieldSlice });
+    meadow = await buildMeadowData({ lowEnd, R, yieldSlice, useUint32: hasUint32Index });
     particleBuf = makeBufferOn(gl, meadow.packed);
     meadow.packed = null;
 
@@ -351,6 +370,7 @@ export function createLotusScene(canvas, options) {
     aBase: gl.getAttribLocation(pvProg, "aBase"),
     aStyle: gl.getAttribLocation(pvProg, "aStyle"),
     aExtra: gl.getAttribLocation(pvProg, "aExtra"),
+    aCorner: gl.getAttribLocation(pvProg, "aCorner"),
   };
   const pvUniforms = {
     uCamPos: gl.getUniformLocation(pvProg, "uCamPos"),
@@ -360,10 +380,9 @@ export function createLotusScene(canvas, options) {
     uState: gl.getUniformLocation(pvProg, "uState"),
     uAim: gl.getUniformLocation(pvProg, "uAim"),
     uOverlay: gl.getUniformLocation(pvProg, "uOverlay"),
+    uTilePx: gl.getUniformLocation(pvProg, "uTilePx"),
     uImage: gl.getUniformLocation(pvProg, "uImage"),
   };
-
-  const hwMaxPointSize = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE)[1] || 256;
 
   function isBackgrounded() {
     return document.hidden || windowBlurred;
@@ -499,7 +518,7 @@ export function createLotusScene(canvas, options) {
     }
 
     const dpr = Math.min(targetDpr, Math.sqrt(budget / (cw * ch)));
-    const maxPointSize = Math.min(hwMaxPointSize, Math.round((lowEnd ? 84 : 96) * dpr));
+    const maxPointSize = Math.round((lowEnd ? 84 : 96) * dpr);
     const W = Math.max(2, Math.round(cw * dpr));
     const H = Math.max(2, Math.round(ch * dpr));
     const aspect = W / H;
@@ -640,7 +659,8 @@ export function createLotusScene(canvas, options) {
       gl.disableVertexAttribArray(glowAttrs.aQuad);
     }
 
-    const stride = 48;
+    const stride = 56;
+    const pvIndexType = hasUint32Index ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
     function drawPvRange(ebo, count, offsetBytes, overlayAlpha = 1.0, overlayMode = 0.0) {
       if (!ebo || count <= 0) return;
       gl.useProgram(pvProg);
@@ -652,6 +672,8 @@ export function createLotusScene(canvas, options) {
       gl.vertexAttribPointer(pvAttrs.aStyle, 4, gl.FLOAT, false, stride, 16);
       gl.enableVertexAttribArray(pvAttrs.aExtra);
       gl.vertexAttribPointer(pvAttrs.aExtra, 4, gl.FLOAT, false, stride, 32);
+      gl.enableVertexAttribArray(pvAttrs.aCorner);
+      gl.vertexAttribPointer(pvAttrs.aCorner, 2, gl.FLOAT, false, stride, 48);
 
       gl.uniform3f(pvUniforms.uCamPos, camX, camY, camZ);
       gl.uniformMatrix3fv(pvUniforms.uViewMat, false, viewMat);
@@ -660,14 +682,16 @@ export function createLotusScene(canvas, options) {
       gl.uniform3f(pvUniforms.uState, settleMix, aspect, dCurve);
       gl.uniform2f(pvUniforms.uAim, ax, ay);
       gl.uniform2f(pvUniforms.uOverlay, overlayAlpha, overlayMode);
+      gl.uniform1f(pvUniforms.uTilePx, atlasTileSize);
       gl.uniform1i(pvUniforms.uImage, 0);
 
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo);
-      gl.drawElements(gl.POINTS, count, gl.UNSIGNED_SHORT, offsetBytes);
+      gl.drawElements(gl.TRIANGLES, count * 6, pvIndexType, offsetBytes);
 
       gl.disableVertexAttribArray(pvAttrs.aBase);
       gl.disableVertexAttribArray(pvAttrs.aStyle);
       gl.disableVertexAttribArray(pvAttrs.aExtra);
+      gl.disableVertexAttribArray(pvAttrs.aCorner);
     }
 
     const { meadowCount, coreCount } = meadow;
@@ -684,6 +708,7 @@ export function createLotusScene(canvas, options) {
     }
 
     // 2.5 Screen-Blend Optical Pastel Sakura Pink Back Halo Behind Lotus Blossom
+    const closedAmt = Math.max(0, 1 - bloomMix * 2.2);
     gl.blendFunc(gl.ONE_MINUS_DST_COLOR, gl.ONE);
     drawGlowBillboard(
       SAKURA_X,
@@ -699,6 +724,22 @@ export function createLotusScene(canvas, options) {
       0.66,
       5.2
     );
+    if (closedAmt > 0.004) {
+      drawGlowBillboard(
+        SAKURA_X,
+        anchorY + 1.95 * sharedScale,
+        SAKURA_Z,
+        3.25 * sharedScale,
+        1.0,
+        0.66,
+        0.82,
+        0.44 * closedAmt,
+        1.0,
+        0.50,
+        0.74,
+        3.8
+      );
+    }
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
     // 3. Central 3D Curved Luminous Lotus Blossom + Sculpted 3D Stamen Heart & Filaments
@@ -794,6 +835,10 @@ export function createLotusScene(canvas, options) {
     gl.disable(gl.DEPTH_TEST);
     gl.depthMask(false);
     gl.blendFunc(gl.ONE_MINUS_DST_COLOR, gl.ONE);
+    const closedSheenOp = closedAmt * 0.14;
+    if (closedSheenOp > 0.004) {
+      drawGlowBillboard(SAKURA_X, anchorY + 1.85 * sharedScale, SAKURA_Z, 2.50 * sharedScale, 1.0, 0.62, 0.80, closedSheenOp, 1.0, 0.52, 0.76, 5.8);
+    }
     const pinkBloomOp = Math.min(1, Math.max(0, (bloomMix - 0.15) / 0.80)) * 0.11;
     if (pinkBloomOp > 0.004) {
       drawGlowBillboard(SAKURA_X, anchorY + 1.35 * sharedScale, SAKURA_Z, 3.2 * sharedScale, 1.0, 0.48, 0.66, pinkBloomOp, 1.0, 0.40, 0.60, 7.2);

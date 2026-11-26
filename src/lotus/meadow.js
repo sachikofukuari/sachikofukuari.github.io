@@ -86,7 +86,7 @@ function generatePetalLanderSlots(R) {
   return slots;
 }
 
-export async function buildMeadowData({ lowEnd, R, yieldSlice }) {
+export async function buildMeadowData({ lowEnd, R, yieldSlice, useUint32 = true }) {
   const particles = [];
   function pushParticle(x, y, z, size, tile, pSeed, light, role, e0, e1, e2, e3) {
     particles.push([x, y, z, size, tile, pSeed, light, role, e0, e1, e2, e3]);
@@ -238,6 +238,16 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice }) {
     pushGrass(x, y, z, 0.78 + R() * 0.98, 0.36 + 0.76 * R(), 0.0);
   }
 
+  // #contact left-edge seam foliage (x in [3.2, 11.2], z in [-6.2, -0.4], off-screen from Intro)
+  const contactLeftSeamFoliage = lowEnd ? 220 : 360;
+  for (let i = 0; i < contactLeftSeamFoliage; i++) {
+    const x = 3.2 + R() * 8.0;
+    const z = -6.2 + R() * 5.8;
+    if (inIntroCorridor(x, z) || !insideMeadowFrustum(x, z, false)) continue;
+    const y = surroundFloor(x, z) - 0.04 + R() * 0.28;
+    pushGrass(x, y, z, 0.80 + R() * 1.00, 0.36 + 0.76 * R(), 0.0);
+  }
+
   // #contact right-of-lotus shoulder foliage (x in [-9.4, -3.6], z in [9.6, 16.8], lower-left Intro hillside)
   const contactRightLotusFoliage = lowEnd ? 200 : 320;
   for (let i = 0; i < contactRightLotusFoliage; i++) {
@@ -377,6 +387,12 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice }) {
     [5.20, 0.90, 0, 1.18, 1.12, 0.96, 0.26, 1],
     [6.40, 2.50, 6, 1.24, 1.18, 0.96, 0.26, 1],
     [7.50, 4.00, 2, 1.28, 1.20, 0.96, 0.28, 1],
+    // #contact left-edge seam anchors (x in [4.6, 8.8], z in [-3.3, -1.5], off-screen from Intro)
+    [4.60, -2.40, 2, 1.24, 1.18, 0.96, 0.28, 1],
+    [6.10, -2.90, 6, 1.30, 1.22, 0.96, 0.28, 1],
+    [7.60, -3.30, 0, 1.32, 1.24, 0.96, 0.30, 1],
+    [8.80, -2.10, 7, 1.32, 1.24, 0.96, 0.28, 1],
+    [7.20, -1.50, 1, 1.28, 1.20, 0.96, 0.28, 1],
     // #contact right-of-lotus shoulder anchors (lower-left Intro hillside)
     [-4.80, 10.60, 2, 1.14, 1.04, 0.96, 0.38, 0],
     [-5.90, 12.20, 6, 1.20, 1.10, 0.96, 0.42, 0],
@@ -414,6 +430,9 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice }) {
     // #contact bottom-left corner bands (x in [4.0, 8.8], z in [-1.2, 5.4], off-screen from Intro)
     { steps: 10, x0: 4.0, x1: 8.8, z0: -1.2, z1: 3.6, yBoost: 0.24, pal: [0, 6, 2, 7, 4], is360: 1 },
     { steps: 9, x0: 4.8, x1: 8.6, z0: 1.2, z1: 5.4, yBoost: 0.28, pal: [2, 7, 1, 6, 5], is360: 1 },
+    // #contact left-edge seam bands (x in [3.4, 10.8], z in [-4.8, -0.5], off-screen from Intro)
+    { steps: 11, x0: 3.4, x1: 10.6, z0: -4.8, z1: -1.6, yBoost: 0.28, pal: [0, 6, 2, 7, 1], is360: 1 },
+    { steps: 10, x0: 3.8, x1: 10.8, z0: -2.8, z1: -0.5, yBoost: 0.26, pal: [2, 7, 4, 6, 0], is360: 1 },
     // #contact right-of-lotus shoulder bands (x in [-8.6, -3.8], z in [9.8, 16.4])
     { steps: 9, x0: -8.6, x1: -4.2, z0: 16.4, z1: 10.2, yBoost: 0.42, pal: [0, 6, 2, 7, 1], is360: 0 },
     { steps: 8, x0: -7.4, x1: -3.8, z0: 14.8, z1: 9.8, yBoost: 0.36, pal: [2, 7, 4, 6, 0], is360: 0 },
@@ -559,7 +578,29 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice }) {
 
   // 7. Select 100 real wildflowers across the broad meadow to catch & rest organically across all 3 lotus petal rings
   await yieldSlice();
-  const particleCount = Math.min(65000, particles.length);
+  const maxParticles = useUint32 ? 65000 : 16380;
+  let sourceParticles = particles;
+  if (particles.length > maxParticles) {
+    const coreList = [];
+    const nonCoreList = [];
+    for (let i = 0; i < particles.length; i++) {
+      const roleVal = particles[i][7];
+      if (roleVal > 0.5 && roleVal < 1.5) coreList.push(particles[i]);
+      else nonCoreList.push(particles[i]);
+    }
+    const targetNonCore = Math.max(0, maxParticles - coreList.length);
+    if (nonCoreList.length > targetNonCore) {
+      const sampled = [];
+      const step = nonCoreList.length / Math.max(1, targetNonCore);
+      for (let i = 0; i < targetNonCore; i++) {
+        sampled.push(nonCoreList[Math.min(nonCoreList.length - 1, Math.floor(i * step))]);
+      }
+      sourceParticles = coreList.concat(sampled);
+    } else {
+      sourceParticles = coreList.concat(nonCoreList);
+    }
+  }
+  const particleCount = Math.min(maxParticles, sourceParticles.length);
   const landSlots = generatePetalLanderSlots(R);
   const assignedLanders = new Set();
 
@@ -575,7 +616,7 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice }) {
     let fallbackScore = Infinity;
     for (let i = 0; i < particleCount; i++) {
       if (assignedLanders.has(i)) continue;
-      const pt = particles[i];
+      const pt = sourceParticles[i];
       const tid = pt[4];
       if (pt[7] >= 0.5 || tid < 16 || tid >= 32) continue;
       const d2 = (pt[0] - tx) * (pt[0] - tx) + (pt[2] - tz) * (pt[2] - tz);
@@ -592,7 +633,7 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice }) {
     const pick = bestIdx !== -1 ? bestIdx : fallbackIdx;
     if (pick !== -1) {
       assignedLanders.add(pick);
-      const pt = particles[pick];
+      const pt = sourceParticles[pick];
       const uClamped = Math.max(0.02, Math.min(0.96, slot.u));
       const vClamped = Math.max(-0.52, Math.min(0.52, slot.v));
       pt[9] = slot.az;
@@ -600,19 +641,41 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice }) {
     }
   }
 
-  // 8. Pack VBO & Build O(N) 256-Bucket Camera-Depth Radix Sort Buffers
+  // 8. Pack 4-Corner Billboard Quad VBO (stride 56 bytes) & O(N) 256-Bucket Camera-Depth Radix Sort Buffers
+  const CORNER_X = [-0.5, 0.5, -0.5, 0.5];
+  const CORNER_Y = [-0.5, -0.5, 0.5, 0.5];
+  const IndexArray = useUint32 ? Uint32Array : Uint16Array;
   const meadowIdxList = [];
-  const coreIndices = [];
-  const packed = new Float32Array(particleCount * 12);
+  const coreIdxList = [];
+  const packed = new Float32Array(particleCount * 4 * 14);
   for (let i = 0; i < particleCount; i++) {
-    const pt = particles[i];
-    packed.set(pt, i * 12);
+    const pt = sourceParticles[i];
+    const baseVert = i * 4;
+    for (let c = 0; c < 4; c++) {
+      const off = (baseVert + c) * 14;
+      packed.set(pt, off);
+      packed[off + 12] = CORNER_X[c];
+      packed[off + 13] = CORNER_Y[c];
+    }
     const roleVal = pt[7];
     if (roleVal > 0.5 && roleVal < 1.5) {
-      coreIndices.push(i);
+      coreIdxList.push(i);
     } else {
       meadowIdxList.push(i);
     }
+  }
+
+  const coreCount = coreIdxList.length;
+  const coreIndices = new IndexArray(coreCount * 6);
+  for (let k = 0; k < coreCount; k++) {
+    const v = coreIdxList[k] << 2;
+    const o = k * 6;
+    coreIndices[o] = v;
+    coreIndices[o + 1] = v + 1;
+    coreIndices[o + 2] = v + 2;
+    coreIndices[o + 3] = v + 2;
+    coreIndices[o + 4] = v + 1;
+    coreIndices[o + 5] = v + 3;
   }
 
   const meadowCount = meadowIdxList.length;
@@ -621,14 +684,14 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice }) {
   const meadowPosZ = new Float32Array(meadowCount);
   const meadowLayerBias = new Float32Array(meadowCount);
   const meadowOrigIdx = new Uint16Array(meadowCount);
-  const sortedMeadow = new Uint16Array(meadowCount);
+  const sortedMeadow = new IndexArray(meadowCount * 6);
   const depthKeys = new Uint16Array(meadowCount);
   const tempKeys = new Uint16Array(meadowCount);
   const tempIdx = new Uint16Array(meadowCount);
 
   for (let k = 0; k < meadowCount; k++) {
     const idx = meadowIdxList[k];
-    const pt = particles[idx];
+    const pt = sourceParticles[idx];
     const tid = pt[4];
     meadowPosX[k] = pt[0];
     meadowPosY[k] = pt[1];
@@ -640,8 +703,8 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice }) {
 
   return {
     packed,
-    coreIndices: new Uint16Array(coreIndices),
-    coreCount: coreIndices.length,
+    coreIndices,
+    coreCount,
     meadowCount,
     meadowPosX,
     meadowPosY,

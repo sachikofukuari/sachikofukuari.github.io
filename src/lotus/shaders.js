@@ -338,6 +338,8 @@ void main() {
   float rimEdge = max(smoothstep(0.76, 0.99, abs(v)), smoothstep(0.80, 0.995, u)) * (1.0 - uSettle * 0.06);
   col = mix(col, vec3(1.00, 0.77, 0.86), clamp(rimEdge * 0.42 + rim * 0.34 * (1.0 - uSettle * 0.12), 0.0, 0.54));
   col += vec3(1.00, 0.56, 0.72) * (pow(rim, 2.0) * (0.24 + 0.16 * vBloom) + rimEdge * (0.16 + 0.12 * vBloom));
+  float closedMask = 1.0 - smoothstep(0.0, 0.45, vBloom);
+  col += vec3(1.00, 0.56, 0.76) * (pow(rim, 1.8) * 0.22 + rimEdge * 0.10) * closedMask;
 
   vec2 hDiff = vNdc - uAim;
   hDiff.x *= uState.y;
@@ -651,7 +653,7 @@ void main() {
   vQuad = aQuad;
 }`;
 
-export const GLOW_FRAG = `precision mediump float;
+export const GLOW_FRAG = `precision highp float;
 uniform vec4 uGlowColorA; // rgb: inner col, a: opacity
 uniform vec4 uGlowColorB; // rgb: outer col, a: sharpness
 
@@ -672,6 +674,7 @@ export const PV_VERT = `precision highp float;
 attribute vec4 aBase;
 attribute vec4 aStyle;
 attribute vec4 aExtra;
+attribute vec2 aCorner;
 
 uniform vec3 uCamPos;
 uniform mat3 uViewMat;
@@ -680,12 +683,14 @@ uniform vec4 uAction;   // x: time, y: bloom, z: flyMix, w: mouseActive
 uniform vec3 uState;    // x: settle, y: aspect, z: diveMix
 uniform vec2 uAim;
 uniform vec2 uOverlay;
+uniform float uTilePx;
 
 varying vec4 vBot;
 varying vec4 vColor;
+varying vec2 vQuad;
 varying vec2 vRotCS;
 varying vec2 vDepthFx;
-varying vec3 vTileInfo;
+varying vec4 vTileInfo;
 
 void main() {
   float t = uAction.x;
@@ -869,13 +874,16 @@ void main() {
   p += push;
 
   float zn = ((dep - 0.35) / 78.0) * 2.0 - 1.0;
-  gl_Position = vec4(p, zn * dep, dep);
 
   float sizePx = (ptSize * uLens.z * uLens.x * 0.5) / max(0.65, dep);
   float flyShrink = 1.0 - fly * blossom * (1.0 - isHeart) * 0.22;
   float landerScale = mix(0.48, 0.72, fract(seed * 7.13));
   float finalPtSize = sizePx * flyShrink * mix(1.0, landerScale, landedAmt);
-  gl_PointSize = clamp(finalPtSize, 1.0, uLens.w);
+  float quadPx = clamp(finalPtSize, 1.0, uLens.w);
+
+  vec2 quadHalfNdc = vec2(quadPx / max(1.0, uLens.z * uLens.y), quadPx / max(1.0, uLens.z));
+  vec2 clipPos = p + aCorner * 2.0 * quadHalfNdc * dep;
+  gl_Position = vec4(clipPos, zn * dep, dep);
 
   float farFade = 1.0 - smoothstep(14.0, 56.0, dep) * mix(0.58, 0.28, max(blossom, isHeart));
   float backLift = smoothstep(10.0, 32.0, dep) * mix(0.06, 0.12, blossom);
@@ -896,38 +904,51 @@ void main() {
   }
   opacity *= uOverlay.x;
 
-  float ptMargin = (finalPtSize / max(1.0, uLens.z)) * 1.15;
+  float ptMargin = (quadPx / max(1.0, uLens.z)) * 1.15;
   float clipX = dep * (1.06 + ptMargin / max(0.35, uLens.y));
   float clipY = dep * (1.06 + ptMargin);
   if (dep < 0.55 || dep > 77.0 || opacity < 0.004 || abs(p.x) > clipX || abs(p.y) > clipY) {
     gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-    gl_PointSize = 0.0;
   }
 
   float tileCol = mod(tile, 8.0);
   float tileRow = floor(tile / 8.0);
   float isBlue = step(15.9, tile) * (1.0 - dust) * step(5.5, tileCol);
+  float maxLod = max(0.0, log2(max(32.0, uTilePx)) - 5.0);
+  float tileLod = clamp(log2(max(1.0, uTilePx / max(1.0, quadPx))), 0.0, maxLod);
 
   vBot = vec4(tile, clamp(defocus, 0.0, 1.0), seed, max(blossom * (1.0 - dust), isHeart));
   vColor = vec4(bright, scatterGlow, dust, clamp(opacity, 0.0, 1.0));
+  vQuad = vec2(aCorner.x, -aCorner.y);
   vRotCS = vec2(cos(spriteRot), sin(spriteRot));
   vDepthFx = vec2(
     smoothstep(42.0, 74.0, dep) * 0.18,
     smoothstep(11.0, 44.0, dep)
   ) * (1.0 - dust) * (1.0 - bug) * (1.0 - isHeart);
-  vTileInfo = vec3(tileCol, tileRow, isBlue);
+  vTileInfo = vec4(tileCol, tileRow, isBlue, tileLod);
 }`;
 
-export const PV_FRAG = `precision mediump float;
+export function getPvFrag(hasTexLod) {
+  return `${hasTexLod ? "#extension GL_EXT_shader_texture_lod : enable\n#define HAS_TEX_LOD 1\n" : "#define HAS_TEX_LOD 0\n"}precision highp float;
 uniform sampler2D uImage;
+uniform float uTilePx;
 varying vec4 vBot;
 varying vec4 vColor;
+varying vec2 vQuad;
 varying vec2 vRotCS;
 varying vec2 vDepthFx;
-varying vec3 vTileInfo;
+varying vec4 vTileInfo;
+
+vec4 sampleAtlas(vec2 loc, float lod) {
+#if HAS_TEX_LOD
+  return texture2DLodEXT(uImage, loc, lod);
+#else
+  return texture2D(uImage, loc);
+#endif
+}
 
 void main() {
-  vec2 q = gl_PointCoord - 0.5;
+  vec2 q = vQuad;
   float q2 = dot(q, q);
   if (vBot.x > 32.9) {
     float core = exp(-q2 * 310.0);
@@ -950,41 +971,52 @@ void main() {
   vec2 uv = mat2(vRotCS.x, -vRotCS.y, vRotCS.y, vRotCS.x) * q + 0.5;
   if (any(lessThan(uv, vec2(0.003))) || any(greaterThan(uv, vec2(0.997)))) discard;
 
-  vec2 loc = (vTileInfo.xy + uv) / 8.0;
+  float halfTex = max(0.003, (0.5 * exp2(vTileInfo.w)) / max(32.0, uTilePx));
+  vec2 safeUv = clamp(uv, halfTex, 1.0 - halfTex);
+  vec2 loc = (vTileInfo.xy + safeUv) / 8.0;
 
   float blurMix = smoothstep(0.22, 0.62, vBot.y);
   vec4 texel;
   if (blurMix <= 0.004) {
-    texel = texture2D(uImage, loc);
+    texel = sampleAtlas(loc, vTileInfo.w);
   } else if (blurMix >= 0.996) {
-    texel = texture2D(uImage, loc + vec2(0.0, 0.5));
+    texel = sampleAtlas(loc + vec2(0.0, 0.5), vTileInfo.w);
   } else {
-    texel = mix(texture2D(uImage, loc), texture2D(uImage, loc + vec2(0.0, 0.5)), blurMix);
+    texel = mix(sampleAtlas(loc, vTileInfo.w), sampleAtlas(loc + vec2(0.0, 0.5), vTileInfo.w), blurMix);
   }
 
-  if (texel.a < 0.015) discard;
+  float isFlower = step(15.9, vBot.x) * (1.0 - step(31.5, vBot.x));
+  float haloAura = exp(-q2 * 8.5) * smoothstep(0.248, 0.02, q2) * isFlower;
+
+  if (texel.a < 0.015 && haloAura < 0.008) discard;
 
   float isBlue = vTileInfo.z;
-  vec3 pinkTint = mix(vec3(1.04, 0.94, 1.00), vec3(1.14, 0.78, 0.98), vDepthFx.y * mix(0.45, 1.0, vBot.w));
-  vec3 blueTint = mix(vec3(0.94, 1.00, 1.08), vec3(0.76, 0.93, 1.16), vDepthFx.y);
-  vec3 backTint = mix(pinkTint, blueTint, isBlue);
-  vec3 rgb = texel.rgb * vColor.x * backTint;
-  float bloomGlow = vBot.w * (0.30 + vColor.y * 0.34 + vDepthFx.y * 0.32);
-  vec3 glowCol = mix(vec3(0.34, 0.14, 0.24), vec3(0.14, 0.26, 0.40), isBlue);
-  rgb += glowCol * texel.a * bloomGlow * min(vColor.x, 1.15);
-  rgb += vec3(0.04, 0.01, 0.03) * texel.a * vDepthFx.y * (1.0 - vBot.w);
-  if (vBot.w > 0.5) {
-    vec3 straight = rgb / max(texel.a, 0.001);
-    straight = (straight / (vec3(1.0) + straight * 0.28)) * 1.14;
-    if (isBlue > 0.5) {
-      straight.r = min(straight.r, straight.b * 0.84);
-      straight.g = min(straight.g, straight.b * 0.93);
-    } else {
-      straight.g = min(straight.g, straight.r * 0.82);
+  vec3 rgb = vec3(0.0);
+  if (texel.a >= 0.015) {
+    vec3 pinkTint = mix(vec3(1.04, 0.94, 1.00), vec3(1.14, 0.78, 0.98), vDepthFx.y * mix(0.45, 1.0, vBot.w));
+    vec3 blueTint = mix(vec3(0.94, 1.00, 1.08), vec3(0.76, 0.93, 1.16), vDepthFx.y);
+    vec3 backTint = mix(pinkTint, blueTint, isBlue);
+    rgb = texel.rgb * vColor.x * backTint;
+    float bloomGlow = vBot.w * (0.30 + vColor.y * 0.34 + vDepthFx.y * 0.32);
+    vec3 glowCol = mix(vec3(0.38, 0.16, 0.28), vec3(0.16, 0.30, 0.46), isBlue);
+    rgb += glowCol * texel.a * bloomGlow * min(vColor.x, 1.15);
+    rgb += vec3(0.04, 0.01, 0.03) * texel.a * vDepthFx.y * (1.0 - vBot.w);
+    if (vBot.w > 0.5) {
+      vec3 straight = rgb / max(texel.a, 0.001);
+      straight = (straight / (vec3(1.0) + straight * 0.28)) * 1.14;
+      if (isBlue > 0.5) {
+        straight.r = min(straight.r, straight.b * 0.84);
+        straight.g = min(straight.g, straight.b * 0.93);
+      } else {
+        straight.g = min(straight.g, straight.r * 0.82);
+      }
+      rgb = clamp(straight, 0.0, 1.0) * texel.a;
     }
-    rgb = clamp(straight, 0.0, 1.0) * texel.a;
+    vec3 mistCol = vec3(0.16, 0.04, 0.10);
+    rgb = mix(rgb, mistCol * texel.a, vDepthFx.x);
   }
-  vec3 mistCol = vec3(0.16, 0.04, 0.10);
-  rgb = mix(rgb, mistCol * texel.a, vDepthFx.x);
-  gl_FragColor = vec4(rgb * vColor.w, texel.a * vColor.w);
+  vec3 pastelAuraCol = mix(vec3(1.00, 0.54, 0.78), vec3(0.50, 0.80, 1.00), isBlue);
+  float auraLift = haloAura * (1.0 - texel.a * 0.72) * (0.20 + vColor.y * 0.14) * clamp(vColor.x, 0.35, 1.15) * (1.0 - vDepthFx.x);
+  gl_FragColor = vec4((rgb + pastelAuraCol * auraLift) * vColor.w, texel.a * vColor.w);
 }`;
+}
