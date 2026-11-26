@@ -1,3 +1,5 @@
+import { isTouchDevice as detectTouchDevice } from "./utils.js";
+
 /**
  * Smooth Falling-Petal Cursor Trail
  * Runs continuously over the intro scene and every portfolio view.
@@ -12,7 +14,6 @@ export function createPetalCursor(canvas, options) {
 
     if (!canvas) {
       return {
-        setTheme() {},
         setPaused() {},
         destroy() {},
       };
@@ -21,17 +22,13 @@ export function createPetalCursor(canvas, options) {
     const ctx = canvas.getContext("2d");
     if (!ctx) {
       return {
-        setTheme() {},
         setPaused() {},
         destroy() {},
       };
     }
 
     const reducedMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const isTouchDevice =
-      window.matchMedia("(pointer: coarse)").matches ||
-      window.innerWidth <= 900 ||
-      (navigator.maxTouchPoints > 0 && Math.min(window.innerWidth, window.innerHeight) <= 1024);
+    const isTouchDevice = detectTouchDevice();
     const cursorInitMs = performance.now();
 
     // Pre-rendered glowing sakura petal sprites for Darker Rose theme
@@ -389,7 +386,6 @@ export function createPetalCursor(canvas, options) {
     reducedMQ.addEventListener("change", onMotionChange);
 
     return {
-      setTheme() {},
       setPaused(nextPaused) {
         paused = !!nextPaused;
         if (paused) {

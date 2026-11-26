@@ -4,6 +4,7 @@
  */
 export function createGreetingController({
   introGreeting,
+  introCue,
   reducedMotionMQ,
   isPaused,
   isIntroStage,
@@ -59,7 +60,7 @@ export function createGreetingController({
           const sp = document.createElement("span");
           sp.className = "greeting-space";
           sp.setAttribute("aria-hidden", "true");
-          sp.innerHTML = "&nbsp;";
+          sp.textContent = "\u00A0";
           lineEl.appendChild(sp);
         } else {
           const span = document.createElement("span");
@@ -84,10 +85,21 @@ export function createGreetingController({
     }
   }
 
-  function clearWriteMasks() {
+  function revealCue() {
+    introCue?.classList.add("is-cue-ready");
+  }
+
+  function hideCue() {
+    introCue?.classList.remove("is-cue-ready");
+  }
+
+  function clearWriteMasks(shouldRevealCue = true) {
     if (writeState.rafId) {
       cancelAnimationFrame(writeState.rafId);
       writeState.rafId = 0;
+    }
+    if (shouldRevealCue && writeState.startedOnce) {
+      revealCue();
     }
     if (!introGreeting) return;
     introGreeting.classList.remove("is-writing");
@@ -137,9 +149,12 @@ export function createGreetingController({
 
   function playWriteAnimation() {
     if (!introGreeting) return;
-    clearWriteMasks();
+    clearWriteMasks(false);
+    hideCue();
 
     if (isPaused() || reducedMotionMQ.matches || document.hidden || isPageInactive() || !isIntroStage()) {
+      introGreeting.classList.add("is-ready");
+      revealCue();
       requestAnimationFrame(measureChars);
       return;
     }
@@ -147,7 +162,7 @@ export function createGreetingController({
     const stacked = window.innerWidth <= 720 && greetingLineEls.length > 1;
     const totalDur = 920;
     let startTs = 0;
-    introGreeting.classList.add("is-writing");
+    let cueShown = false;
 
     if (stacked) {
       applyWriteFrameToEl(greetingLineEls[0], 0, 28);
@@ -155,10 +170,11 @@ export function createGreetingController({
     } else {
       applyWriteFrameToEl(introGreeting, 0, 32);
     }
+    introGreeting.classList.add("is-writing", "is-ready");
 
     const step = (now) => {
       if (!isIntroStage() || isPaused() || reducedMotionMQ.matches || document.hidden || isPageInactive()) {
-        clearWriteMasks();
+        clearWriteMasks(true);
         measureChars();
         return;
       }
@@ -174,10 +190,15 @@ export function createGreetingController({
         applyWriteFrameToEl(introGreeting, Math.min(1, elapsed / totalDur), 32);
       }
 
+      if (!cueShown && elapsed >= totalDur * 0.72) {
+        cueShown = true;
+        revealCue();
+      }
+
       if (elapsed < totalDur) {
         writeState.rafId = requestAnimationFrame(step);
       } else {
-        clearWriteMasks();
+        clearWriteMasks(true);
         measureChars();
       }
     };
@@ -330,24 +351,26 @@ export function createGreetingController({
 
   function initInitialMaskAndEvents(introCfg, loc, onPointerResume) {
     if (!introGreeting) return;
-    buildChars(getLines(introCfg, loc));
-    if (!isPaused() && !reducedMotionMQ.matches) {
-      if (window.innerWidth <= 720 && greetingLineEls.length > 1) {
-        applyWriteFrameToEl(greetingLineEls[0], 0, 28);
-        applyWriteFrameToEl(greetingLineEls[1], 0, 28);
-      } else {
-        applyWriteFrameToEl(introGreeting, 0, 32);
-      }
-    }
+    const lines = getLines(introCfg, loc);
+    buildChars(lines);
+    const sampleText = lines.join(" ");
 
     const runInitialWrite = () => {
       if (writeState.startedOnce) return;
       writeState.startedOnce = true;
       playWriteAnimation();
     };
-    if (document.fonts?.ready) {
-      document.fonts.ready.then(runInitialWrite);
-      setTimeout(runInitialWrite, 450);
+
+    if (document.fonts && typeof document.fonts.load === "function") {
+      const fontReady = Promise.all([
+        document.fonts.load('700 48px "1FTV VIP Alpha Brights"', sampleText),
+        document.fonts.ready,
+      ]).catch(() => {});
+      const fallbackTimer = new Promise((resolve) => setTimeout(resolve, 2500));
+      Promise.race([fontReady, fallbackTimer]).then(runInitialWrite);
+    } else if (document.fonts?.ready) {
+      const fallbackTimer = new Promise((resolve) => setTimeout(resolve, 2500));
+      Promise.race([document.fonts.ready, fallbackTimer]).then(runInitialWrite);
     } else {
       runInitialWrite();
     }

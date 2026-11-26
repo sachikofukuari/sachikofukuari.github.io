@@ -11,8 +11,6 @@
  * - Tools (Software & Peripherals — leave [] to show "to be updated")
  * - Works (leave [] to show a clean "to be updated" example card)
  * - Contact links & shared UI strings (`ui`)
- *
- * See CONTENT_GUIDE.md for step-by-step copy-paste examples & image tips.
  */
 
 window.PORTFOLIO_DATA = {

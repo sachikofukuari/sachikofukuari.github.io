@@ -13,8 +13,6 @@ export function createDialogController({
   uiStr,
   onNavigate,
 }) {
-  let lastTriggerEl = null;
-
   function renderWorkMedia(work) {
     if (work.videoUrl) {
       const ytId = extractYouTubeId(work.videoUrl);
@@ -57,9 +55,8 @@ export function createDialogController({
     return { isVideo: false, visualHtml, galleryHtml };
   }
 
-  function open(triggerEl, eyebrow, visualHtml, title, meta, notes, url, mediaOpts = {}) {
+  function open(_triggerEl, eyebrow, visualHtml, title, meta, notes, url, mediaOpts = {}) {
     if (!itemDialog || !dialogBody || !dialogEyebrow) return;
-    lastTriggerEl = triggerEl;
     dialogEyebrow.textContent = eyebrow;
     const href = safeUrl(url);
     const hasLink = href && href !== "#";
@@ -116,13 +113,24 @@ export function createDialogController({
   }
 
   dialogClose?.addEventListener("click", close);
-  itemDialog?.addEventListener("click", (e) => {
-    if (e.target === itemDialog) itemDialog.close();
-  });
+  // Light-dismiss fallback for browsers without <dialog closedby="any"> support (Safari)
+  if (itemDialog && !("closedBy" in HTMLDialogElement.prototype)) {
+    const isOutside = (e) => {
+      const r = itemDialog.getBoundingClientRect();
+      return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+    };
+    let pressedOutside = false;
+    itemDialog.addEventListener("pointerdown", (e) => {
+      pressedOutside = isOutside(e);
+    });
+    itemDialog.addEventListener("pointerup", (e) => {
+      if (pressedOutside && isOutside(e)) itemDialog.close();
+      pressedOutside = false;
+    });
+  }
   itemDialog?.addEventListener("close", () => {
-    if (dialogBody) dialogBody.innerHTML = "";
-    lastTriggerEl?.focus?.();
-    lastTriggerEl = null;
+    itemDialog.returnValue = "";
+    dialogBody?.replaceChildren();
   });
 
   return {

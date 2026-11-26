@@ -32,7 +32,7 @@ function splitDisplayName(p) {
   return { main: rawName, sub: "" };
 }
 
-export function renderAvatarMarkup(avatarSrc, altText) {
+function renderAvatarMarkup(avatarSrc, altText) {
   const cleanSrc = avatarSrc ? safeUrl(avatarSrc) : "";
   return cleanSrc && cleanSrc !== "#"
     ? `<img src="${esc(cleanSrc)}" alt="${esc(altText)}" data-fallback="true" data-kind="avatar" data-live-avatar="true">`
@@ -46,7 +46,7 @@ function renderBannerHtml(p) {
   if (!bannerSrc || bannerSrc === "#") return getDefaultBannerSvg();
 
   const webpSrc = rawWebp ? safeUrl(rawWebp) : "";
-  const imgTag = `<img src="${esc(bannerSrc)}" alt="Profile banner" fetchpriority="high" decoding="async" data-fallback="true" data-kind="banner">`;
+  const imgTag = `<img src="${esc(bannerSrc)}" alt="Profile banner" width="2400" height="900" loading="eager" fetchpriority="high" decoding="async" data-fallback="true" data-kind="banner">`;
   if (webpSrc && webpSrc !== "#") {
     return `<picture><source srcset="${esc(webpSrc)}" type="image/webp">${imgTag}</picture>`;
   }
@@ -270,7 +270,7 @@ function renderUseCardHtml(item, loc, { interactive }) {
 function renderPlaceholderToolCardHtml(groupLabel, emptyText) {
   const labelLower = String(groupLabel || "").toLowerCase();
   return `
-    <div class="use-card placeholder-widget-card" aria-label="${esc(groupLabel)} ${esc(emptyText)}">
+    <article class="use-card placeholder-widget-card">
       <div class="use-card-top">
         <span>${esc(labelLower)}</span>
       </div>
@@ -281,7 +281,7 @@ function renderPlaceholderToolCardHtml(groupLabel, emptyText) {
         <span class="use-card-cat">${esc(labelLower)}</span>
         <span class="use-card-name placeholder-title">${esc(emptyText)}</span>
       </div>
-    </div>
+    </article>
   `;
 }
 
@@ -343,7 +343,7 @@ function renderWorkCardHtml(work, loc) {
           <span class="work-cat-pill">${esc(category)}</span>
           <span>${esc(work.year || "")}${status ? ` · ${esc(status)}` : ""}</span>
         </div>
-        <h3 class="work-title">${esc(title)}</h3>
+        <h2 class="work-title">${esc(title)}</h2>
         <p class="work-summary">${esc(summary)}</p>
         <div class="work-tags">
           ${(work.tags || []).map((t) => `<span class="work-tag">${esc(t)}</span>`).join("")}
@@ -355,7 +355,7 @@ function renderWorkCardHtml(work, loc) {
 
 function renderPlaceholderWorkCardHtml(emptyText, pillLabel, soonLabel) {
   return `
-    <div class="work-card placeholder-widget-card" aria-label="${esc(pillLabel)} ${esc(emptyText)}">
+    <article class="work-card placeholder-widget-card">
       <div class="work-cover placeholder-work-cover" aria-hidden="true">
         <div class="placeholder-slot-icon">${getSmallIconSvg("sparkle")}</div>
       </div>
@@ -364,9 +364,9 @@ function renderPlaceholderWorkCardHtml(emptyText, pillLabel, soonLabel) {
           <span class="work-cat-pill">${esc(pillLabel)}</span>
           <span>${esc(soonLabel)}</span>
         </div>
-        <h3 class="work-title placeholder-title">${esc(emptyText)}</h3>
+        <h2 class="work-title placeholder-title">${esc(emptyText)}</h2>
       </div>
-    </div>
+    </article>
   `;
 }
 

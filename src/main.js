@@ -21,7 +21,14 @@ import {
   getGearIllustrationSvg,
   getToolMonogramHtml,
 } from "./icons.js";
-import { buildDiscordCdnUrl, createLocaleHelpers, esc, normalizeTab, safeUrl } from "./utils.js";
+import {
+  buildDiscordCdnUrl,
+  createLocaleHelpers,
+  esc,
+  isTouchDevice as detectTouchDevice,
+  normalizeTab,
+  safeUrl,
+} from "./utils.js";
 
 const DATA = window.PORTFOLIO_DATA || {};
 
@@ -160,6 +167,7 @@ const petalCursor = createPetalCursor(document.getElementById("petal-cursor-canv
 
 const greetingCtrl = createGreetingController({
   introGreeting,
+  introCue: introCueEl,
   reducedMotionMQ,
   isPaused: () => motionPaused,
   isIntroStage: () => stage === "intro",
@@ -209,10 +217,7 @@ if (bannerPreloadUrl) {
   }
 }
 
-const isTouchDevice =
-  window.matchMedia("(pointer: coarse)").matches ||
-  window.innerWidth <= 900 ||
-  (navigator.maxTouchPoints > 0 && Math.min(window.innerWidth, window.innerHeight) <= 1024);
+const isTouchDevice = detectTouchDevice();
 const appInitMs = performance.now();
 
 function setPageInactive(inactive) {
@@ -294,6 +299,7 @@ function applyLanguageUi(rerenderOpen = false) {
   if (introGreeting) {
     greetingCtrl.buildChars(greetingCtrl.getLines(DATA.intro, loc));
     if (rerenderOpen) {
+      document.fonts?.load?.('700 48px "1FTV VIP Alpha Brights"', greet).catch(() => {});
       if (stage === "intro") {
         greetingCtrl.playWriteAnimation();
       } else {

@@ -3,12 +3,11 @@
   src: url("assets/fonts/1FTV-VIP-Alpha-Brights.woff2") format("woff2");
   font-style: normal;
   font-weight: 100 900;
-  font-display: swap;
+  font-display: block;
 }
 
 :root {
   --font-sans: "Google Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-display: "Google Sans", system-ui, sans-serif;
   --font-serif: "Google Sans", system-ui, sans-serif;
   --font-cursive: "1FTV VIP Alpha Brights", "Google Sans", sans-serif;
 
@@ -16,12 +15,9 @@
   --bg-deep: #211018;
   --bg-mid: #351926;
   --bg-hi: #4c2537;
-  --mist-white: rgba(255, 240, 247, 0.14);
 
   --card-bg: rgba(68, 36, 47, 0.90);
   --card-bg-hover: rgba(88, 47, 61, 0.94);
-  --card-stack-1: rgba(98, 56, 70, 0.62);
-  --card-stack-2: rgba(116, 68, 84, 0.42);
 
   --surface-pill: rgba(56, 29, 40, 0.92);
   --surface-pill-active: rgba(132, 74, 94, 0.96);
@@ -36,7 +32,6 @@
   --text-muted: #c99cad;
 
   --accent: #f7a6c8;
-  --accent-contrast: #2a111d;
   --star: #f7d288;
   --shadow: 0 20px 54px rgba(14, 5, 10, 0.45);
   --scrollbar-track: #24111a;
@@ -344,14 +339,12 @@ body[data-stage="open"] .back-intro-btn {
   view-transition-name: none;
 }
 
-.util-pill,
 .util-icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
   min-height: 40px;
-  padding: 8px 14px;
   border-radius: 999px;
   background: var(--surface-pill);
   border: 1px solid var(--border);
@@ -364,20 +357,15 @@ body[data-stage="open"] .back-intro-btn {
     background-color 0.22s ease,
     border-color 0.22s ease,
     transform 0.2s ease;
-}
-
-.util-icon-btn {
   width: 40px;
   height: 40px;
   padding: 0;
 }
 
-.util-pill[hidden],
 .util-icon-btn[hidden] {
   display: none;
 }
 
-.util-pill:hover,
 .util-icon-btn:hover {
   background: var(--surface-pill-active);
   border-color: var(--border-strong);
@@ -481,6 +469,7 @@ body[data-stage="open"] .intro-stage {
   padding: 26px 32px;
   margin: -26px -32px;
   font-family: var(--font-cursive);
+  font-size-adjust: from-font;
   font-size: clamp(42px, 7.2vw, 90px);
   font-weight: 700;
   line-height: 1.12;
@@ -491,6 +480,11 @@ body[data-stage="open"] .intro-stage {
     0 0 16px rgba(255, 114, 188, 0.54),
     0 0 32px rgba(255, 68, 162, 0.32);
   transform: translate3d(calc(var(--gx, 0px) + var(--wx, 0px)), var(--gy, 0px), 0) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+}
+
+.intro-greeting:not(.is-ready) {
+  opacity: 0;
+  visibility: hidden;
 }
 
 .greeting-line {
@@ -544,12 +538,17 @@ body[data-stage="open"] .intro-stage {
   letter-spacing: 0.06em;
   line-height: 1.2;
   color: #fff2f8;
-  opacity: 0.5;
+  opacity: 0;
+  transition: opacity 0.65s ease;
   white-space: nowrap;
   pointer-events: none;
   text-shadow:
     0 0 8px rgba(255, 174, 216, 0.85),
     0 0 18px rgba(247, 108, 172, 0.65);
+}
+
+.bloom-cue.is-cue-ready {
+  opacity: 0.5;
 }
 
 @media (max-width: 720px), (max-aspect-ratio: 85 / 100) {
@@ -559,11 +558,11 @@ body[data-stage="open"] .intro-stage {
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  :root:not([data-motion="paused"]) body[data-stage="intro"]:not([data-page-inactive="true"]) .intro-greeting {
+  :root:not([data-motion="paused"]) body[data-stage="intro"]:not([data-page-inactive="true"]) .intro-greeting.is-ready {
     animation: greeting-bloom 3.6s ease-in-out infinite;
   }
 
-  :root:not([data-motion="paused"]) body[data-stage="intro"]:not([data-page-inactive="true"]) .bloom-cue {
+  :root:not([data-motion="paused"]) body[data-stage="intro"]:not([data-page-inactive="true"]) .bloom-cue.is-cue-ready {
     animation: cue-bounce 2.1s ease-in-out infinite;
   }
 }
@@ -910,18 +909,6 @@ body[data-transitioning="true"] .portfolio-shell {
   transform: translateX(3px);
 }
 
-.empty-works-panel {
-  max-width: 460px;
-  margin: 18px auto 0;
-  padding: 28px 24px;
-  text-align: center;
-  color: var(--text-secondary);
-  font-size: 14.5px;
-  border-radius: 18px;
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-}
-
 .hero-bottom-row {
   margin-top: 16px;
   padding-top: 14px;
@@ -965,32 +952,6 @@ body[data-transitioning="true"] .portfolio-shell {
   color: var(--text-muted);
 }
 
-.hero-badges-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-  padding-left: 4px;
-}
-
-.mini-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 11px;
-  border-radius: 999px;
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.mini-badge svg {
-  width: 13px;
-  height: 13px;
-  color: var(--accent);
-}
-
 /* Decorative Sakura Corner Clusters */
 .sakura-deco {
   position: absolute;
@@ -1010,16 +971,6 @@ body[data-transitioning="true"] .portfolio-shell {
   bottom: -24px;
   right: -20px;
   transform: rotate(14deg);
-}
-
-.sakura-deco-grid {
-  top: -10px;
-  right: -16px;
-  left: auto;
-  bottom: auto;
-  width: 68px;
-  height: 68px;
-  transform: rotate(12deg);
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -1569,11 +1520,6 @@ body[data-transitioning="true"] .portfolio-shell {
  * SECTION HEADINGS & TOOLS CARDS
  * ============================================================================ */
 
-.section-block {
-  position: relative;
-  margin-top: 32px;
-}
-
 .section-head-centered {
   display: flex;
   flex-direction: column;
@@ -1599,23 +1545,6 @@ body[data-transitioning="true"] .portfolio-shell {
   color: var(--text-secondary);
   max-width: 52ch;
   text-shadow: var(--heading-shadow);
-}
-
-.section-action-link {
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--text-primary);
-  padding: 5px 13px;
-  border-radius: 99px;
-  background: color-mix(in srgb, var(--surface-pill) 94%, transparent);
-  border: 1px solid var(--border);
-  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
-}
-
-.section-action-link:hover {
-  background: var(--surface-pill-active);
-  border-color: var(--border-strong);
-  transform: translateY(-1px);
 }
 
 .uses-grid {
@@ -1806,54 +1735,6 @@ button.use-card:hover {
   color: var(--text-primary);
   line-height: 1.25;
   text-transform: lowercase;
-}
-
-/* ============================================================================
- * GAMES & FAVORITES TILE ROW
- * ============================================================================ */
-
-.favorites-row {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 12px;
-}
-
-.fav-tile {
-  width: 58px;
-  height: 58px;
-  border-radius: 14px;
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  background: var(--surface-tile);
-  border: 1px solid var(--border);
-  color: var(--text-primary);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14);
-  transition:
-    transform 0.22s ease,
-    border-color 0.22s ease,
-    background-color 0.22s ease;
-}
-
-.fav-tile:hover {
-  transform: translateY(-3px);
-  border-color: var(--border-strong);
-  background: var(--card-bg-hover);
-}
-
-.fav-tile svg {
-  width: 24px;
-  height: 24px;
-}
-
-.fav-tile-code {
-  font-size: 9px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
 }
 
 /* ============================================================================
@@ -2088,13 +1969,6 @@ button.use-card:hover {
 .links-stack {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-}
-
-.links-preview-row {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
   gap: 10px;
 }
 
@@ -2510,11 +2384,6 @@ body[data-stage="open"] .bottom-nav-btn[aria-current="page"] .nav-pill-bg {
     gap: 5px;
   }
 
-  .util-pill {
-    padding: 7px 11px;
-    font-size: 12px;
-  }
-
   .hero-banner-credit {
     right: 8px;
     bottom: 6px;
@@ -2530,13 +2399,6 @@ body[data-stage="open"] .bottom-nav-btn[aria-current="page"] .nav-pill-bg {
   .sakura-deco-br {
     right: -10px;
   }
-
-  .sakura-deco-grid {
-    top: -14px;
-    right: -6px;
-    width: 52px;
-    height: 52px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2545,8 +2407,6 @@ body[data-stage="open"] .bottom-nav-btn[aria-current="page"] .nav-pill-bg {
   .portfolio-shell,
   .use-card,
   .work-card,
-  .fav-tile,
-  .util-pill,
   .lotus-svg-fallback {
     transition-duration: 0.01s;
   }

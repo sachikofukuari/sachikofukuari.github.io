@@ -150,3 +150,11 @@ export function buildDiscordCdnUrl(id, avatarHash) {
   }
 }
 
+export function isTouchDevice() {
+  return (
+    window.matchMedia("(pointer: coarse)").matches ||
+    window.innerWidth <= 900 ||
+    (navigator.maxTouchPoints > 0 && Math.min(window.innerWidth, window.innerHeight) <= 1024)
+  );
+}
+

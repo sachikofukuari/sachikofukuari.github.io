@@ -39,7 +39,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&display=swap">
+  <link rel="preload" href="./assets/fonts/1FTV-VIP-Alpha-Brights.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="./styles.css">
+  <noscript><style>.intro-greeting, .bloom-cue { opacity: 1 !important; visibility: visible !important; }</style></noscript>
 </head>
 <body data-stage="intro">
   <!-- Soft pink + drifting white mist fallback behind WebGL -->
@@ -138,7 +140,7 @@
   </nav>
 
   <!-- Minimal floating mini-player shown when song plays off the Home tab -->
-  <div id="mini-player" class="mini-player" hidden aria-label="Now playing">
+  <div id="mini-player" class="mini-player" role="region" hidden aria-label="Now playing">
     <button id="mini-player-toggle" class="mini-player-btn" type="button" aria-label="Pause song"></button>
     <span class="eq-bars" aria-hidden="true"><i></i><i></i><i></i></span>
     <button id="mini-player-open-home" class="mini-player-title" type="button" title="Jump to Home player"></button>
@@ -146,7 +148,7 @@
   </div>
 
   <!-- Quick-view modal for peripherals & works -->
-  <dialog id="item-dialog" class="item-dialog" aria-labelledby="dialog-title">
+  <dialog id="item-dialog" class="item-dialog" closedby="any" aria-labelledby="dialog-title">
     <div class="dialog-sheet">
       <div class="dialog-head">
         <span id="dialog-eyebrow" class="dialog-eyebrow"></span>
