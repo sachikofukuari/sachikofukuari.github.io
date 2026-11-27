@@ -80,7 +80,7 @@ export function createLotusScene(canvas, options) {
     premultipliedAlpha: true,
     depth: true,
     stencil: true,
-    antialias: false,
+    antialias: true,
     preserveDrawingBuffer: false,
     powerPreference: "default",
   });
@@ -251,7 +251,7 @@ export function createLotusScene(canvas, options) {
   let skyHeightPx = 0;
   let avgGap = 16;
   let budgetAt = 0;
-  let budget = lowEnd ? 1400000 : 3400000;
+  let budget = lowEnd ? 2000000 : 2400000;
 
   let tClock = 0;
   let mx = 0;
@@ -502,11 +502,13 @@ export function createLotusScene(canvas, options) {
 
     const cw = Math.max(1, canvas.clientWidth);
     const ch = Math.max(1, canvas.clientHeight);
-    const maxDpr = lowEnd ? 0.95 : 1.0;
-    const targetDpr = Math.min(window.devicePixelRatio || 1, maxDpr);
+    const deviceDpr = window.devicePixelRatio || 1;
+    const maxDpr = lowEnd ? 2.25 : 1.5;
+    const targetDpr = Math.min(deviceDpr, maxDpr);
     const nativePixels = Math.round(cw * ch * targetDpr * targetDpr);
-    const hi = Math.max(lowEnd ? 750000 : 1200000, Math.min(nativePixels, lowEnd ? 1150000 : 1850000));
-    const minBudget = Math.max(Math.round(cw * ch * 0.72), lowEnd ? 400000 : 650000);
+    const hi = Math.min(nativePixels, lowEnd ? 2000000 : 2400000);
+    const minDprFloor = Math.min(targetDpr, lowEnd ? 1.5 : 1.0);
+    const minBudget = Math.min(hi, Math.round(cw * ch * minDprFloor * minDprFloor));
 
     if (!animating && !settledOpen && now - budgetAt > 1500) {
       if (avgGap > 36 && budget > minBudget) {
@@ -517,7 +519,8 @@ export function createLotusScene(canvas, options) {
       budgetAt = now;
     }
 
-    const dpr = Math.min(targetDpr, Math.sqrt(budget / (cw * ch)));
+    const effectiveBudget = Math.min(budget, hi);
+    const dpr = Math.min(targetDpr, Math.sqrt(effectiveBudget / (cw * ch)));
     const maxPointSize = Math.round((lowEnd ? 84 : 96) * dpr);
     const W = Math.max(2, Math.round(cw * dpr));
     const H = Math.max(2, Math.round(ch * dpr));
@@ -557,7 +560,7 @@ export function createLotusScene(canvas, options) {
 
     // 1. Camera-Synced 360-Degree Spherical Starry Sky + Periodic Aurora
     if (skyGl && skyCanvas && skyCanvas.isConnected) {
-      const skyDpr = 0.65;
+      const skyDpr = Math.min(deviceDpr, lowEnd ? 1.5 : 1.0);
       const sW = Math.max(2, Math.round(cw * skyDpr));
       const sH = Math.max(2, Math.round(ch * skyDpr));
       const skyResized = skyWidthPx !== sW || skyHeightPx !== sH;
