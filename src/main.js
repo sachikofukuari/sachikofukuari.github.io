@@ -547,6 +547,7 @@ let touchStartY = null;
 let touchStartScrollY = 0;
 let transitionLocked = false;
 let transitionUnlockTimer = 0;
+let exitCleanupTimer = 0;
 
 function lockTransition(durationMs) {
   transitionLocked = true;
@@ -564,6 +565,8 @@ function lockTransition(durationMs) {
 
 function openPortfolio() {
   if (stage === "open" || transitionLocked) return;
+  clearTimeout(exitCleanupTimer);
+  exitCleanupTimer = 0;
   lotusScene?.setTabIndex(TAB_INDEX[activeTab] || 0);
   lotusScene?.setBloom(true);
   greetingCtrl.clearWriteMasks();
@@ -609,10 +612,15 @@ function closeToIntro(restoreFocus = false) {
   introStage.removeAttribute("aria-hidden");
   btnBackIntro?.setAttribute("aria-hidden", "true");
   btnBackIntro?.setAttribute("tabindex", "-1");
-  resetPortfolioScroll();
+
+  clearTimeout(exitCleanupTimer);
+  exitCleanupTimer = setTimeout(() => {
+    exitCleanupTimer = 0;
+    if (stage === "intro") resetPortfolioScroll();
+  }, 420);
 
   lotusScene?.setBloom(false);
-  greetingCtrl.playWriteAnimation();
+  greetingCtrl.playWriteAnimation(200);
 
   if (restoreFocus) {
     setTimeout(() => {

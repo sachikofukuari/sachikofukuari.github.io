@@ -12,8 +12,11 @@ export function createGreetingController({
 }) {
   const greetingChars = [];
   const greetingLineEls = [];
+  const activeWriteAnims = [];
+  let cueTimer = 0;
+  let writeDoneTimer = 0;
+  let charsMeasured = false;
   const writeState = {
-    rafId: 0,
     startedOnce: false,
   };
   const hoverState = {
@@ -49,6 +52,7 @@ export function createGreetingController({
     introGreeting.textContent = "";
     greetingChars.length = 0;
     greetingLineEls.length = 0;
+    charsMeasured = false;
 
     for (const lineStr of lines) {
       const lineEl = document.createElement("span");
@@ -94,45 +98,24 @@ export function createGreetingController({
   }
 
   function clearWriteMasks(shouldRevealCue = true) {
-    if (writeState.rafId) {
-      cancelAnimationFrame(writeState.rafId);
-      writeState.rafId = 0;
+    clearTimeout(cueTimer);
+    cueTimer = 0;
+    clearTimeout(writeDoneTimer);
+    writeDoneTimer = 0;
+    for (let i = 0; i < activeWriteAnims.length; i++) {
+      try {
+        activeWriteAnims[i].cancel();
+      } catch {
+        // Ignore cancelled WAAPI animations
+      }
     }
+    activeWriteAnims.length = 0;
     if (shouldRevealCue && writeState.startedOnce) {
       revealCue();
     }
     if (!introGreeting) return;
     introGreeting.classList.remove("is-writing");
-    introGreeting.style.webkitMaskImage = "";
-    introGreeting.style.maskImage = "";
-    introGreeting.style.setProperty("--wx", "0px");
-    for (const lineEl of greetingLineEls) {
-      lineEl.style.webkitMaskImage = "";
-      lineEl.style.maskImage = "";
-      lineEl.style.setProperty("--wx", "0px");
-    }
-  }
-
-  function applyWriteFrameToEl(el, progress, padX) {
-    if (!el) return;
-    const p = Math.max(0, Math.min(1, progress));
-    if (p <= 0.001) {
-      el.style.webkitMaskImage = "linear-gradient(90deg, transparent 0%, transparent 100%)";
-      el.style.maskImage = "linear-gradient(90deg, transparent 0%, transparent 100%)";
-      el.style.setProperty("--wx", "0px");
-      return;
-    }
-    const e = 1 - Math.pow(1 - p, 2.5);
-    const totalW = Math.max(padX * 2 + 20, el.offsetWidth);
-    const innerW = Math.max(1, totalW - padX * 2);
-    const tx = ((1 - e) * innerW * 0.5).toFixed(2);
-    const feather = Math.min(34, innerW * 0.14);
-    const head = padX + e * (innerW + feather);
-    const solid = Math.max(0, head - feather);
-    const mask = `linear-gradient(90deg, #000 0px, #000 ${solid.toFixed(1)}px, transparent ${head.toFixed(1)}px)`;
-    el.style.webkitMaskImage = mask;
-    el.style.maskImage = mask;
-    el.style.setProperty("--wx", `${tx}px`);
+    introGreeting.style.removeProperty("--wx");
   }
 
   function measureChars() {
@@ -145,65 +128,53 @@ export function createGreetingController({
       item.cx = rect.left + rect.width * 0.5 - hoverState.curGx;
       item.cy = rect.top + rect.height * 0.5 - hoverState.curGy;
     }
+    charsMeasured = true;
   }
 
-  function playWriteAnimation() {
+  function playWriteAnimation(delayMs = 0) {
     if (!introGreeting) return;
     clearWriteMasks(false);
     hideCue();
+    charsMeasured = false;
 
     if (isPaused() || reducedMotionMQ.matches || document.hidden || isPageInactive() || !isIntroStage()) {
       introGreeting.classList.add("is-ready");
       revealCue();
-      requestAnimationFrame(measureChars);
       return;
     }
 
-    const stacked = window.innerWidth <= 720 && greetingLineEls.length > 1;
-    const totalDur = 920;
-    let startTs = 0;
-    let cueShown = false;
-
-    if (stacked) {
-      applyWriteFrameToEl(greetingLineEls[0], 0, 28);
-      applyWriteFrameToEl(greetingLineEls[1], 0, 28);
-    } else {
-      applyWriteFrameToEl(introGreeting, 0, 32);
-    }
+    const baseDelay = Math.max(0, Number(delayMs) || 0);
+    const count = greetingChars.length;
     introGreeting.classList.add("is-writing", "is-ready");
 
-    const step = (now) => {
-      if (!isIntroStage() || isPaused() || reducedMotionMQ.matches || document.hidden || isPageInactive()) {
-        clearWriteMasks(true);
-        measureChars();
-        return;
-      }
-      if (!startTs) startTs = now;
-      const elapsed = now - startTs;
+    for (let i = 0; i < count; i++) {
+      const el = greetingChars[i].el;
+      if (typeof el.animate !== "function") continue;
+      const charDelay = Math.round(baseDelay + (i / Math.max(1, count - 1)) * 520);
+      const anim = el.animate(
+        [
+          { opacity: 0, transform: "translate3d(-8px, 6px, 0) scale(0.92)" },
+          { opacity: 1, transform: "translate3d(0px, 0px, 0) scale(1)" },
+        ],
+        {
+          duration: 360,
+          delay: charDelay,
+          easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+          fill: "backwards",
+        }
+      );
+      activeWriteAnims.push(anim);
+    }
 
-      if (stacked) {
-        const p1 = Math.min(1, elapsed / 440);
-        const p2 = Math.max(0, Math.min(1, (elapsed - 390) / (totalDur - 390)));
-        applyWriteFrameToEl(greetingLineEls[0], p1, 28);
-        applyWriteFrameToEl(greetingLineEls[1], p2, 28);
-      } else {
-        applyWriteFrameToEl(introGreeting, Math.min(1, elapsed / totalDur), 32);
-      }
+    cueTimer = setTimeout(() => {
+      cueTimer = 0;
+      if (isIntroStage()) revealCue();
+    }, baseDelay + 640);
 
-      if (!cueShown && elapsed >= totalDur * 0.72) {
-        cueShown = true;
-        revealCue();
-      }
-
-      if (elapsed < totalDur) {
-        writeState.rafId = requestAnimationFrame(step);
-      } else {
-        clearWriteMasks(true);
-        measureChars();
-      }
-    };
-
-    writeState.rafId = requestAnimationFrame(step);
+    writeDoneTimer = setTimeout(() => {
+      writeDoneTimer = 0;
+      clearWriteMasks(true);
+    }, baseDelay + 920);
   }
 
   function stepHoverFrame(now) {
@@ -379,7 +350,7 @@ export function createGreetingController({
       "resize",
       () => {
         clearWriteMasks();
-        measureChars();
+        charsMeasured = false;
       },
       { passive: true }
     );
@@ -389,6 +360,7 @@ export function createGreetingController({
         if (e.pointerType === "touch" || !isIntroStage() || isPaused() || reducedMotionMQ.matches) return;
         onPointerResume();
         if (document.hidden) return;
+        if (!charsMeasured) measureChars();
         hoverState.px = e.clientX;
         hoverState.py = e.clientY;
         hoverState.active = true;

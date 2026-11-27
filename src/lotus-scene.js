@@ -172,6 +172,8 @@ export function createLotusScene(canvas, options) {
   const ovBucketOffsets = new Int32Array(256);
   let hasSortedOnce = false;
   let wasAnimating = false;
+  let wasAnimatingFrame = false;
+  let lastSortNow = 0;
   let lastSortedYaw = 0;
   let lastSortedElev = 0;
   let lastSortedDist = 0;
@@ -180,7 +182,7 @@ export function createLotusScene(canvas, options) {
   let tabYawTarget = 0;
   let tabYawMix = 0;
 
-  function sortMeadowByCamera(camX, camY, camZ, viewMat, maxOverlayDep) {
+  function sortMeadowByCamera(camX, camY, camZ, viewMat, maxOverlayDep, lotusRadius, sortDist) {
     if (!meadowEbos[0] || !meadow || meadow.meadowCount === 0) return;
     const {
       meadowCount,
@@ -221,11 +223,14 @@ export function createLotusScene(canvas, options) {
       bucketCounts[k16 & 255]++;
       hiBucketCounts[hi]++;
 
+      const depRatio = dep / Math.max(4.0, sortDist);
+      const coneScale = depRatio < 0.35 ? 0.35 : depRatio > 1.25 ? 1.25 : depRatio;
+      const maxViewX = lotusRadius * coneScale + 2.6;
       const flags = meadowFlags[k];
       const inOv =
         !(flags & 1) &&
         ((flags & 2) !== 0 ||
-          (dep >= -3.3 && dep <= maxOverlayDep && Math.abs(dx * rx + dz * rz) <= 9.0));
+          (dep >= -2.5 && dep <= maxOverlayDep && Math.abs(dx * rx + dz * rz) <= maxViewX));
       if (inOv) {
         ovFlags[k] = 1;
         ovBucketCounts[hi]++;
@@ -501,8 +506,12 @@ export function createLotusScene(canvas, options) {
       return;
     }
 
-    const rawDt = Math.min(0.034, Math.max(0.004, gap * 0.001));
-    smoothDt = animating ? smoothDt * 0.72 + rawDt * 0.28 : rawDt;
+    const startingAnim = animating && !wasAnimatingFrame;
+    wasAnimatingFrame = animating;
+    const rawDt = startingAnim
+      ? Math.min(1 / 60, Math.max(0.004, gap * 0.001))
+      : Math.min(0.034, Math.max(0.004, gap * 0.001));
+    smoothDt = startingAnim ? rawDt : animating ? smoothDt * 0.72 + rawDt * 0.28 : rawDt;
     const dt = Math.min(0.028, smoothDt);
     lastNow = now;
     hasPaintedOnce = true;
@@ -563,7 +572,9 @@ export function createLotusScene(canvas, options) {
     const minDprFloor = Math.min(targetDpr, lowEnd ? 1.25 : 1.0);
     const minBudget = Math.min(hi, Math.round(cw * ch * minDprFloor * minDprFloor));
 
-    if (!animating && hasFreshPerfSample && now - budgetAt > 1500) {
+    if (animating) {
+      budgetAt = now;
+    } else if (hasFreshPerfSample && now - budgetAt > 1500) {
       if (avgGap > 28 && budget > minBudget) {
         budget = Math.max(minBudget, Math.round(budget * 0.85));
         avgGap = 22;
@@ -682,26 +693,30 @@ export function createLotusScene(canvas, options) {
     const sortYaw = animating ? orbitYaw : dCurve * 1.62 + tabYawMix * dCurve;
     const sortElev = animating ? elev : introElev + (0.42 - introElev) * Math.pow(dCurve, 0.92);
     const sortDist = animating ? dist : 8.85 + (openDist - 8.85) * dCurve + S(dCurve * Math.PI) * 1.15;
-    const sortThreshold = animating ? 0.014 : 0.002;
-    const distThreshold = animating ? 0.14 : 0.06;
+    const sortThreshold = animating ? 0.022 : 0.002;
+    const distThreshold = animating ? 0.18 : 0.06;
+    const camMoved =
+      Math.abs(sortYaw - lastSortedYaw) > sortThreshold ||
+      Math.abs(sortElev - lastSortedElev) > sortThreshold ||
+      Math.abs(sortDist - lastSortedDist) > distThreshold;
     if (
       !hasSortedOnce ||
       wasAnimating !== animating ||
-      Math.abs(sortYaw - lastSortedYaw) > sortThreshold ||
-      Math.abs(sortElev - lastSortedElev) > sortThreshold ||
-      Math.abs(sortDist - lastSortedDist) > distThreshold
+      (camMoved && (!animating || now - lastSortNow >= 45))
     ) {
-      const maxOverlayDep = Math.min(20.5, sortDist + 7.0);
+      const lotusRadius = 2.1 + 4.5 * Math.max(bloomMix, bloomTarget);
+      const maxOverlayDep = Math.min(19.2, sortDist + lotusRadius + 2.2);
       if (animating) {
-        sortMeadowByCamera(camX, camY, camZ, viewMat, maxOverlayDep);
+        sortMeadowByCamera(camX, camY, camZ, viewMat, maxOverlayDep, lotusRadius, sortDist);
       } else {
         const baseHoriz = sortDist * C(sortElev);
         const baseCamX = targetX + S(sortYaw) * baseHoriz;
         const baseCamZ = targetZ - C(sortYaw) * baseHoriz;
         const baseCamY = targetY + sortDist * S(sortElev);
         const baseViewMat = buildViewMatrix(baseCamX, baseCamY, baseCamZ, targetX, targetY, targetZ);
-        sortMeadowByCamera(baseCamX, baseCamY, baseCamZ, baseViewMat, maxOverlayDep);
+        sortMeadowByCamera(baseCamX, baseCamY, baseCamZ, baseViewMat, maxOverlayDep, lotusRadius, sortDist);
       }
+      lastSortNow = now;
       wasAnimating = animating;
       lastSortedYaw = sortYaw;
       lastSortedElev = sortElev;
@@ -1013,6 +1028,7 @@ export function createLotusScene(canvas, options) {
 
   return {
     setBloom(open) {
+      smoothDt = Math.min(smoothDt, 1 / 60);
       clearTimeout(flyDownTimer);
       flyDownTimer = 0;
       pendingFlyDown = false;
@@ -1041,6 +1057,7 @@ export function createLotusScene(canvas, options) {
       wake();
     },
     setTabIndex(idx) {
+      smoothDt = Math.min(smoothDt, 1 / 60);
       tabYawTarget = (Number.isFinite(idx) ? idx : 0) * 0.22;
       wake();
     },
