@@ -102,7 +102,6 @@ export function createLotusScene(canvas, options) {
         })
       : null;
   const bgGl = skyGl || gl;
-  const hasDerivatives = Boolean(gl.getExtension("OES_standard_derivatives"));
   const hasUint32Index = Boolean(gl.getExtension("OES_element_index_uint"));
   let hasTexLod = Boolean(gl.getExtension("EXT_shader_texture_lod"));
 
@@ -125,7 +124,7 @@ export function createLotusScene(canvas, options) {
   }
 
   const bgProg = compileProgram(bgGl, BG_VERT, BG_FRAG);
-  const sakuraMeshProg = compileProgram(gl, SAKURA_VERT, getSakuraFrag(hasDerivatives));
+  const sakuraMeshProg = compileProgram(gl, SAKURA_VERT, getSakuraFrag());
   const stamenProg = compileProgram(gl, STAMEN_VERT, STAMEN_FRAG);
   const glowProg = compileProgram(gl, GLOW_VERT, GLOW_FRAG);
   let pvProg;
@@ -157,14 +156,20 @@ export function createLotusScene(canvas, options) {
   let atlasTex = null;
   let atlasTileSize = 256;
   let particleBuf = null;
-  let meadowEbo = null;
+  let meadowEbos = [null, null];
+  let overlayEbos = [null, null];
+  let eboSlot = 0;
+  let overlayCount = 0;
   let coreEbo = null;
   let meadow = null;
   let sakuraMesh = null;
   let stamenMesh = null;
 
   const bucketCounts = new Int32Array(256);
+  const hiBucketCounts = new Int32Array(256);
   const bucketOffsets = new Int32Array(256);
+  const ovBucketCounts = new Int32Array(256);
+  const ovBucketOffsets = new Int32Array(256);
   let hasSortedOnce = false;
   let wasAnimating = false;
   let lastSortedYaw = 0;
@@ -175,8 +180,8 @@ export function createLotusScene(canvas, options) {
   let tabYawTarget = 0;
   let tabYawMix = 0;
 
-  function sortMeadowByCamera(camX, camY, camZ, viewMat) {
-    if (!meadowEbo || !meadow || meadow.meadowCount === 0) return;
+  function sortMeadowByCamera(camX, camY, camZ, viewMat, maxOverlayDep) {
+    if (!meadowEbos[0] || !meadow || meadow.meadowCount === 0) return;
     const {
       meadowCount,
       meadowPosX,
@@ -184,24 +189,49 @@ export function createLotusScene(canvas, options) {
       meadowPosZ,
       meadowLayerBias,
       meadowOrigIdx,
+      meadowFlags,
+      ovFlags,
+      tempOv,
       sortedMeadow,
+      overlayIndices,
       depthKeys,
       tempKeys,
       tempIdx,
     } = meadow;
+    const rx = viewMat[0];
+    const rz = viewMat[6];
     const fx = viewMat[2];
     const fy = viewMat[5];
     const fz = viewMat[8];
     const depthScale16 = 65535 / 84.0;
 
     bucketCounts.fill(0);
+    hiBucketCounts.fill(0);
+    ovBucketCounts.fill(0);
     for (let k = 0; k < meadowCount; k++) {
-      const dep = (meadowPosX[k] - camX) * fx + (meadowPosY[k] - camY) * fy + (meadowPosZ[k] - camZ) * fz - meadowLayerBias[k];
+      const dx = meadowPosX[k] - camX;
+      const dy = meadowPosY[k] - camY;
+      const dz = meadowPosZ[k] - camZ;
+      const dep = dx * fx + dy * fy + dz * fz - meadowLayerBias[k];
       let k16 = 65535 - (((dep + 4.0) * depthScale16) | 0);
       if (k16 < 0) k16 = 0;
       else if (k16 > 65535) k16 = 65535;
       depthKeys[k] = k16;
+      const hi = k16 >>> 8;
       bucketCounts[k16 & 255]++;
+      hiBucketCounts[hi]++;
+
+      const flags = meadowFlags[k];
+      const inOv =
+        !(flags & 1) &&
+        ((flags & 2) !== 0 ||
+          (dep >= -3.3 && dep <= maxOverlayDep && Math.abs(dx * rx + dz * rz) <= 9.0));
+      if (inOv) {
+        ovFlags[k] = 1;
+        ovBucketCounts[hi]++;
+      } else {
+        ovFlags[k] = 0;
+      }
     }
 
     let acc = 0;
@@ -214,19 +244,21 @@ export function createLotusScene(canvas, options) {
       const dst = bucketOffsets[k16 & 255]++;
       tempIdx[dst] = meadowOrigIdx[k];
       tempKeys[dst] = k16;
+      tempOv[dst] = ovFlags[k];
     }
 
-    bucketCounts.fill(0);
-    for (let k = 0; k < meadowCount; k++) {
-      bucketCounts[tempKeys[k] >>> 8]++;
-    }
     acc = 0;
+    let ovAcc = 0;
     for (let b = 0; b < 256; b++) {
       bucketOffsets[b] = acc;
-      acc += bucketCounts[b];
+      acc += hiBucketCounts[b];
+      ovBucketOffsets[b] = ovAcc;
+      ovAcc += ovBucketCounts[b];
     }
+    overlayCount = ovAcc;
     for (let k = 0; k < meadowCount; k++) {
-      const dst = bucketOffsets[tempKeys[k] >>> 8]++;
+      const hi = tempKeys[k] >>> 8;
+      const dst = bucketOffsets[hi]++;
       const v = tempIdx[k] << 2;
       const o = dst * 6;
       sortedMeadow[o] = v;
@@ -235,10 +267,24 @@ export function createLotusScene(canvas, options) {
       sortedMeadow[o + 3] = v + 2;
       sortedMeadow[o + 4] = v + 1;
       sortedMeadow[o + 5] = v + 3;
+      if (tempOv[k]) {
+        const oo = (ovBucketOffsets[hi]++) * 6;
+        overlayIndices[oo] = v;
+        overlayIndices[oo + 1] = v + 1;
+        overlayIndices[oo + 2] = v + 2;
+        overlayIndices[oo + 3] = v + 2;
+        overlayIndices[oo + 4] = v + 1;
+        overlayIndices[oo + 5] = v + 3;
+      }
     }
 
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, meadowEbo);
+    eboSlot ^= 1;
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, meadowEbos[eboSlot]);
     gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, 0, sortedMeadow);
+    if (overlayCount > 0) {
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, overlayEbos[eboSlot]);
+      gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, 0, overlayIndices.subarray(0, overlayCount * 6));
+    }
     hasSortedOnce = true;
   }
 
@@ -250,8 +296,9 @@ export function createLotusScene(canvas, options) {
   let skyWidthPx = 0;
   let skyHeightPx = 0;
   let avgGap = 16;
+  let hasFreshPerfSample = false;
   let budgetAt = 0;
-  let budget = lowEnd ? 2000000 : 2400000;
+  let budget = lowEnd ? 1450000 : 2000000;
 
   let tClock = 0;
   let mx = 0;
@@ -292,9 +339,16 @@ export function createLotusScene(canvas, options) {
     particleBuf = makeBufferOn(gl, meadow.packed);
     meadow.packed = null;
 
-    meadowEbo = gl.createBuffer();
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, meadowEbo);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, meadow.sortedMeadow, gl.DYNAMIC_DRAW);
+    const emptyMeadowBytes = meadow.sortedMeadow.byteLength;
+    const emptyOverlayBytes = meadow.overlayIndices.byteLength;
+    for (let s = 0; s < 2; s++) {
+      meadowEbos[s] = gl.createBuffer();
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, meadowEbos[s]);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, emptyMeadowBytes, gl.DYNAMIC_DRAW);
+      overlayEbos[s] = gl.createBuffer();
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, overlayEbos[s]);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, emptyOverlayBytes, gl.DYNAMIC_DRAW);
+    }
     coreEbo = makeElementBuffer(meadow.coreIndices);
     hasSortedOnce = false;
 
@@ -334,7 +388,6 @@ export function createLotusScene(canvas, options) {
     uState: gl.getUniformLocation(sakuraMeshProg, "uState"),
     uAim: gl.getUniformLocation(sakuraMeshProg, "uAim"),
     uSettle: gl.getUniformLocation(sakuraMeshProg, "uSettle"),
-    uAaPass: gl.getUniformLocation(sakuraMeshProg, "uAaPass"),
   };
 
   const stAttrs = {
@@ -349,7 +402,6 @@ export function createLotusScene(canvas, options) {
     uState: gl.getUniformLocation(stamenProg, "uState"),
     uAim: gl.getUniformLocation(stamenProg, "uAim"),
     uSettle: gl.getUniformLocation(stamenProg, "uSettle"),
-    uAaPass: gl.getUniformLocation(stamenProg, "uAaPass"),
   };
 
   const glowAttrs = {
@@ -498,24 +550,28 @@ export function createLotusScene(canvas, options) {
 
     if (!settledOpen && minGap <= 16) {
       avgGap = avgGap * 0.88 + Math.min(200, Math.max(4, gap)) * 0.12;
+      hasFreshPerfSample = true;
     }
 
     const cw = Math.max(1, canvas.clientWidth);
     const ch = Math.max(1, canvas.clientHeight);
     const deviceDpr = window.devicePixelRatio || 1;
-    const maxDpr = lowEnd ? 2.25 : 1.5;
+    const maxDpr = lowEnd ? 1.75 : 1.25;
     const targetDpr = Math.min(deviceDpr, maxDpr);
     const nativePixels = Math.round(cw * ch * targetDpr * targetDpr);
-    const hi = Math.min(nativePixels, lowEnd ? 2000000 : 2400000);
-    const minDprFloor = Math.min(targetDpr, lowEnd ? 1.5 : 1.0);
+    const hi = Math.min(nativePixels, lowEnd ? 1450000 : 2000000);
+    const minDprFloor = Math.min(targetDpr, lowEnd ? 1.25 : 1.0);
     const minBudget = Math.min(hi, Math.round(cw * ch * minDprFloor * minDprFloor));
 
-    if (!animating && !settledOpen && now - budgetAt > 1500) {
-      if (avgGap > 36 && budget > minBudget) {
-        budget = Math.max(minBudget, Math.round(budget * 0.82));
-      } else if (avgGap < 20 && budget < hi) {
+    if (!animating && hasFreshPerfSample && now - budgetAt > 1500) {
+      if (avgGap > 28 && budget > minBudget) {
+        budget = Math.max(minBudget, Math.round(budget * 0.85));
+        avgGap = 22;
+      } else if (avgGap < 18 && budget < hi) {
         budget = Math.min(hi, Math.round(budget * 1.12));
+        avgGap = 22;
       }
+      hasFreshPerfSample = false;
       budgetAt = now;
     }
 
@@ -560,7 +616,7 @@ export function createLotusScene(canvas, options) {
 
     // 1. Camera-Synced 360-Degree Spherical Starry Sky + Periodic Aurora
     if (skyGl && skyCanvas && skyCanvas.isConnected) {
-      const skyDpr = Math.min(deviceDpr, lowEnd ? 1.5 : 1.0);
+      const skyDpr = Math.min(deviceDpr, lowEnd ? 1.0 : 0.85);
       const sW = Math.max(2, Math.round(cw * skyDpr));
       const sH = Math.max(2, Math.round(ch * skyDpr));
       const skyResized = skyWidthPx !== sW || skyHeightPx !== sH;
@@ -569,7 +625,13 @@ export function createLotusScene(canvas, options) {
         skyCanvas.height = skyHeightPx = sH;
         skyGl.viewport(0, 0, skyWidthPx, skyHeightPx);
       }
-      if (skyResized || lastSkyNow === 0 || animating || pointerActive || now - lastSkyNow >= 50) {
+      if (
+        skyResized ||
+        lastSkyNow === 0 ||
+        (animating && now - lastSkyNow >= 32) ||
+        (pointerActive && now - lastSkyNow >= 32) ||
+        now - lastSkyNow >= 50
+      ) {
         lastSkyNow = now;
         skyGl.disable(skyGl.DEPTH_TEST);
         skyGl.disable(skyGl.CULL_FACE);
@@ -620,8 +682,8 @@ export function createLotusScene(canvas, options) {
     const sortYaw = animating ? orbitYaw : dCurve * 1.62 + tabYawMix * dCurve;
     const sortElev = animating ? elev : introElev + (0.42 - introElev) * Math.pow(dCurve, 0.92);
     const sortDist = animating ? dist : 8.85 + (openDist - 8.85) * dCurve + S(dCurve * Math.PI) * 1.15;
-    const sortThreshold = animating ? 0.0005 : 0.001;
-    const distThreshold = animating ? 0.01 : 0.04;
+    const sortThreshold = animating ? 0.014 : 0.002;
+    const distThreshold = animating ? 0.14 : 0.06;
     if (
       !hasSortedOnce ||
       wasAnimating !== animating ||
@@ -629,15 +691,16 @@ export function createLotusScene(canvas, options) {
       Math.abs(sortElev - lastSortedElev) > sortThreshold ||
       Math.abs(sortDist - lastSortedDist) > distThreshold
     ) {
+      const maxOverlayDep = Math.min(20.5, sortDist + 7.0);
       if (animating) {
-        sortMeadowByCamera(camX, camY, camZ, viewMat);
+        sortMeadowByCamera(camX, camY, camZ, viewMat, maxOverlayDep);
       } else {
         const baseHoriz = sortDist * C(sortElev);
         const baseCamX = targetX + S(sortYaw) * baseHoriz;
         const baseCamZ = targetZ - C(sortYaw) * baseHoriz;
         const baseCamY = targetY + sortDist * S(sortElev);
         const baseViewMat = buildViewMatrix(baseCamX, baseCamY, baseCamZ, targetX, targetY, targetZ);
-        sortMeadowByCamera(baseCamX, baseCamY, baseCamZ, baseViewMat);
+        sortMeadowByCamera(baseCamX, baseCamY, baseCamZ, baseViewMat, maxOverlayDep);
       }
       wasAnimating = animating;
       lastSortedYaw = sortYaw;
@@ -707,7 +770,7 @@ export function createLotusScene(canvas, options) {
     gl.disable(gl.DEPTH_TEST);
     gl.depthMask(false);
     if (meadowCount > 0) {
-      drawPvRange(meadowEbo, meadowCount, 0);
+      drawPvRange(meadowEbos[eboSlot], meadowCount, 0);
     }
 
     // 2.5 Screen-Blend Optical Pastel Sakura Pink Back Halo Behind Lotus Blossom
@@ -776,24 +839,11 @@ export function createLotusScene(canvas, options) {
     gl.uniform2f(smUniforms.uAim, ax, ay);
     gl.uniform1f(smUniforms.uSettle, settleMix);
 
+    gl.disable(gl.BLEND);
     gl.depthMask(true);
     gl.depthFunc(gl.LESS);
-    gl.uniform1f(smUniforms.uAaPass, 0.0);
     gl.drawElements(gl.TRIANGLES, sakuraMesh.indexCount, gl.UNSIGNED_SHORT, 0);
-
-    gl.depthMask(false);
-    gl.depthFunc(gl.LEQUAL);
-    gl.uniform1f(smUniforms.uAaPass, 1.0);
-    gl.drawElements(gl.TRIANGLES, sakuraMesh.indexCount, gl.UNSIGNED_SHORT, 0);
-    if (useFrontDepth) {
-      gl.colorMask(false, false, false, false);
-      gl.depthMask(true);
-      gl.depthFunc(gl.LESS);
-      gl.uniform1f(smUniforms.uAaPass, 1.0);
-      gl.drawElements(gl.TRIANGLES, sakuraMesh.indexCount, gl.UNSIGNED_SHORT, 0);
-      gl.colorMask(true, true, true, true);
-    }
-    gl.depthFunc(gl.LESS);
+    gl.enable(gl.BLEND);
 
     gl.disableVertexAttribArray(smAttrs.aPetalUV);
     gl.disableVertexAttribArray(smAttrs.aPetalDim);
@@ -817,12 +867,6 @@ export function createLotusScene(canvas, options) {
 
       gl.depthMask(true);
       gl.depthFunc(gl.LEQUAL);
-      gl.uniform1f(stUniforms.uAaPass, 0.0);
-      gl.drawElements(gl.TRIANGLES, stamenMesh.indexCount, gl.UNSIGNED_SHORT, 0);
-
-      gl.depthMask(false);
-      gl.depthFunc(gl.LEQUAL);
-      gl.uniform1f(stUniforms.uAaPass, 1.0);
       gl.drawElements(gl.TRIANGLES, stamenMesh.indexCount, gl.UNSIGNED_SHORT, 0);
       gl.depthFunc(gl.LESS);
 
@@ -865,7 +909,7 @@ export function createLotusScene(canvas, options) {
     }
 
     // 4.5 True 3D Stencil-Masked Foreground Flowerbed + 100 Petal-Landing Wildflowers
-    if (useFrontDepth) {
+    if (useFrontDepth && overlayCount > 0) {
       gl.enable(gl.DEPTH_TEST);
       gl.depthMask(false);
       gl.depthFunc(gl.LESS);
@@ -873,7 +917,7 @@ export function createLotusScene(canvas, options) {
       gl.stencilFunc(gl.EQUAL, 1, 0xff);
       gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
       gl.stencilMask(0x00);
-      drawPvRange(meadowEbo, meadowCount, 0, 1.0, 1.0);
+      drawPvRange(overlayEbos[eboSlot], overlayCount, 0, 1.0, 1.0);
       gl.disable(gl.STENCIL_TEST);
     }
 

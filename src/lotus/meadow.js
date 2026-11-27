@@ -102,7 +102,7 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice, useUint32 = true 
     pushParticle(x, y, z, size, tile, R(), litScale, roleVal, ang, r, 0.52 + R() * 0.72, 0.0);
   };
 
-  const foliageCount = lowEnd ? 4050 : 5420;
+  const foliageCount = lowEnd ? 3200 : 5420;
   for (let i = 0; i < foliageCount; i++) {
     if (!(i & 511)) await yieldSlice();
     const z = 0.95 + Math.pow(R(), 1.12) * 51.0;
@@ -121,7 +121,7 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice, useUint32 = true 
   }
 
   // Dedicated lush foreground central mossy mound framing the lotus root
-  const moundCount = lowEnd ? 500 : 720;
+  const moundCount = lowEnd ? 400 : 720;
   for (let i = 0; i < moundCount; i++) {
     if (!(i & 511)) await yieldSlice();
     const z = 2.6 + R() * 5.0;
@@ -190,7 +190,7 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice, useUint32 = true 
   }
 
   // Uniform 360-degree area-distributed foliage blanket surrounding the intro valley (covers all tab views)
-  const surroundGrassCount = lowEnd ? 2600 : 4200;
+  const surroundGrassCount = lowEnd ? 2000 : 4200;
   const rMinSq = 4.2 * 4.2;
   const rSpanSq = 34.0 * 34.0 - rMinSq;
   for (let i = 0; i < surroundGrassCount; i++) {
@@ -206,7 +206,7 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice, useUint32 = true 
   }
 
   // Dedicated grass blanket directly behind the first POV (covers left screen of #contact & #works)
-  const rearIntroGrass = lowEnd ? 900 : 1500;
+  const rearIntroGrass = lowEnd ? 700 : 1500;
   for (let i = 0; i < rearIntroGrass; i++) {
     if (!(i & 255)) await yieldSlice();
     const x = (R() * 2 - 1) * 22.0;
@@ -260,7 +260,7 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice, useUint32 = true 
 
   // 2. Siltora-Style Cascading Diagonal Wildflower Streams (Abundant Pastel Pink + Scattered Pastel Blue)
   const beds = [];
-  const streamDensity = lowEnd ? 0.52 : 0.72;
+  const streamDensity = lowEnd ? 0.44 : 0.72;
 
   function addValleyRibbon(zStart, zEnd, steps, offFn, sideSign, kChoices, wBase, dBase, litBoost) {
     const count = Math.max(4, Math.round(steps * streamDensity));
@@ -525,7 +525,7 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice, useUint32 = true 
         const yy = baseY + 0.24 + yBoost + R() * 0.22;
         const flSize = baseFl * (0.58 + R() * 0.76);
         if (!insideStaticView(xx, yy, zz, flSize)) continue;
-        if (R() < 0.396) continue;
+        if (R() < (lowEnd ? 0.50 : 0.396)) continue;
         const kk = R() < 0.74 ? k : R() < 0.65 ? 6 + Math.floor(R() * 2) : (k + 2) % 6;
         const tileId = 16 + kk + (R() < 0.5 ? 8 : 0);
         const ang = Math.atan2(zz - SAKURA_Z, xx - SAKURA_X);
@@ -679,7 +679,11 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice, useUint32 = true 
   const meadowPosZ = new Float32Array(meadowCount);
   const meadowLayerBias = new Float32Array(meadowCount);
   const meadowOrigIdx = new Uint16Array(meadowCount);
+  const meadowFlags = new Uint8Array(meadowCount);
+  const ovFlags = new Uint8Array(meadowCount);
+  const tempOv = new Uint8Array(meadowCount);
   const sortedMeadow = new IndexArray(meadowCount * 6);
+  const overlayIndices = new IndexArray(meadowCount * 6);
   const depthKeys = new Uint16Array(meadowCount);
   const tempKeys = new Uint16Array(meadowCount);
   const tempIdx = new Uint16Array(meadowCount);
@@ -694,6 +698,9 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice, useUint32 = true 
     // Bias blossoms forward of co-located grass without breaking 3D hill occlusion across distance
     meadowLayerBias[k] = tid >= 32 ? 1.25 : tid >= 16 ? 0.85 : 0.0;
     meadowOrigIdx[k] = idx;
+    const isPad = pt[7] >= 1.5;
+    const isLander = pt[11] >= 9.5 && tid >= 15.9 && tid < 31.9;
+    meadowFlags[k] = (isPad ? 1 : 0) | (isLander ? 2 : 0);
   }
 
   return {
@@ -706,7 +713,11 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice, useUint32 = true 
     meadowPosZ,
     meadowLayerBias,
     meadowOrigIdx,
+    meadowFlags,
+    ovFlags,
+    tempOv,
     sortedMeadow,
+    overlayIndices,
     depthKeys,
     tempKeys,
     tempIdx,

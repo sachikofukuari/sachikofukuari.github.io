@@ -77,6 +77,17 @@ float starLayer360(float azNorm, float el, float cols, float threshold, float co
 void main() {
   vec3 col = vec3(0.0);
 
+  // Intro V-valley sill that dissolves smoothly as the camera orbits around 360 degrees
+  float sillScale = clamp((uAspect - 0.45) / 1.15, 0.28, 1.0) * uSkyFade;
+  float ax = abs(uv.x);
+  float asym = uv.x < 0.0 ? 1.06 : 0.94;
+  float vWall = (0.04 + (ax * 0.44 + ax * ax * 0.44) * asym) * sillScale;
+  float sillEdgeBase = mix(-0.45, vWall - 0.06, uSkyFade);
+  if (uv.y < sillEdgeBase - 0.16) {
+    gl_FragColor = vec4(vec3(0.010, 0.012, 0.010) * (uSkyFade * 0.85), 1.0);
+    return;
+  }
+
   vec2 ndc = uv - uAim * vec2(mix(0.032, 0.018, uSettle), mix(0.020, 0.014, uSettle));
   vec3 rayView = normalize(vec3((ndc.x * uAspect) / max(0.2, uFocal), ndc.y / max(0.2, uFocal), 1.0));
   vec3 rayWorld = normalize(vec3(
@@ -84,15 +95,14 @@ void main() {
     dot(uViewMat[1], rayView),
     dot(uViewMat[2], rayView)
   ));
+  if (uSkyFade < 0.001 && rayWorld.y <= -0.219) {
+    gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+    return;
+  }
   float az = atan(rayWorld.x, rayWorld.z);
   float el = asin(clamp(rayWorld.y, -1.0, 1.0));
   float azNorm = az / 6.2831853 + 0.5;
 
-  // Intro V-valley sill that dissolves smoothly as the camera orbits around 360 degrees
-  float sillScale = clamp((uAspect - 0.45) / 1.15, 0.28, 1.0) * uSkyFade;
-  float ax = abs(uv.x);
-  float asym = uv.x < 0.0 ? 1.06 : 0.94;
-  float vWall = (0.04 + (ax * 0.44 + ax * ax * 0.44) * asym) * sillScale;
   float sillEdge = mix(-0.45, vWall - 0.06 + 0.015 * sin(az * 6.0), uSkyFade);
   float sillMask = (1.0 - smoothstep(sillEdge - 0.14, sillEdge + 0.04, uv.y)) * uSkyFade;
   col = mix(col, vec3(0.010, 0.012, 0.010), sillMask * 0.85);
@@ -274,10 +284,9 @@ void main() {
   vWorldPos = wPos;
 }`;
 
-export function getSakuraFrag(hasDerivatives) {
-  return `${hasDerivatives ? "#extension GL_OES_standard_derivatives : enable\n#define HAS_DERIV 1\n" : "#define HAS_DERIV 0\n"}precision highp float;
+export function getSakuraFrag() {
+  return `precision highp float;
 uniform float uSettle;
-uniform float uAaPass;
 uniform vec3 uCamPos;
 uniform vec4 uAction;
 uniform vec2 uState;
@@ -355,27 +364,7 @@ void main() {
 
   float veilSoft = smoothstep(0.35, 1.0, uSettle);
   col *= mix(1.0, 0.98, veilSoft);
-
-  float av = abs(v);
-  #if HAS_DERIV
-    float fwV = clamp(fwidth(av), 0.0025, 0.20);
-    float fwU = clamp(fwidth(u), 0.0025, 0.15);
-  #else
-    float fwV = 0.014;
-    float fwU = 0.014;
-  #endif
-  float aaV = 1.0 - smoothstep(1.0 - fwV * 1.45, 1.0, av);
-  float aaTip = 1.0 - smoothstep(1.0 - fwU * 1.45, 1.0, u);
-  float aaBase = mix(smoothstep(0.0, fwU * 1.0, u), 1.0, vBloom);
-  float aaCov = aaV * aaTip * aaBase;
-
-  if (uAaPass < 0.5) {
-    if (aaCov < 0.88) discard;
-    gl_FragColor = vec4(col, 1.0);
-  } else {
-    if (aaCov >= 0.88 || aaCov <= 0.02) discard;
-    gl_FragColor = vec4(col * aaCov, aaCov);
-  }
+  gl_FragColor = vec4(col, 1.0);
 }`;
 }
 
@@ -484,9 +473,9 @@ void main() {
     vec3 rawSide = cross(tang, toCam);
     vec3 sideAxis = length(rawSide) > 0.001 ? normalize(rawSide) : vec3(-sin(az), 0.0, cos(az));
 
-    float stalkW = mix(0.024, 0.016, clamp(u / 0.72, 0.0, 1.0));
+    float stalkW = mix(0.021, 0.014, clamp(u / 0.72, 0.0, 1.0));
     float antherT = clamp((u - 0.72) / 0.28, 0.0, 1.0);
-    float antherW = 0.058 * pow(sin(antherT * 3.14159265), 0.68);
+    float antherW = 0.052 * pow(sin(antherT * 3.14159265), 0.68);
     float halfW = (u < 0.72 ? stalkW : max(stalkW * (1.0 - antherT), antherW)) * mix(0.4, 1.0, bloomOpen);
     wPos = c0 + sideAxis * (v * halfW * scaleL);
     nrm = normalize(sideAxis * v + toCam * sqrt(max(0.05, 1.0 - v * v)));
@@ -535,7 +524,6 @@ void main() {
 
 export const STAMEN_FRAG = `precision highp float;
 uniform float uSettle;
-uniform float uAaPass;
 uniform vec3 uCamPos;
 uniform vec4 uAction;
 uniform vec2 uState;
@@ -568,7 +556,6 @@ void main() {
   float rim = pow(clamp(1.0 - max(dot(n, viewDir), 0.0), 0.0001, 1.0), 2.2);
 
   vec3 col;
-  float aaCov = 1.0;
 
   if (kind < 0.5) {
     float centerFade = exp(-u * u * 2.2);
@@ -586,7 +573,6 @@ void main() {
     col += vec3(1.0, 0.78, 0.24) * (0.22 + 0.20 * centerFade);
     col += vec3(1.0, 0.72, 0.22) * rim * 0.36;
   } else if (kind < 1.5) {
-    aaCov = 1.0 - smoothstep(0.62, 1.0, abs(v));
     float cyl = sqrt(max(0.05, 1.0 - v * v));
     float isAnther = smoothstep(0.66, 0.82, u);
     vec3 stalkCol = mix(vec3(0.94, 0.54, 0.64), vec3(0.98, 0.72, 0.56), smoothstep(0.0, 0.68, u));
@@ -606,7 +592,6 @@ void main() {
     col += vec3(0.32, 0.16, 0.24) * bounce;
     col += vec3(0.55, 0.84, 0.68) * rim * 0.22;
   } else {
-    aaCov = (1.0 - smoothstep(0.84, 1.0, abs(v))) * (1.0 - smoothstep(0.88, 1.0, u));
     vec3 sepBase = vec3(0.22, 0.46, 0.30);
     vec3 sepTip = vec3(0.78, 0.46, 0.62);
     col = mix(sepBase, sepTip, smoothstep(0.35, 0.95, u));
@@ -619,15 +604,7 @@ void main() {
   col = (col / (vec3(1.0) + col * 0.22)) * 1.10;
   col *= mix(1.0, 0.94, smoothstep(0.35, 1.0, uSettle));
   col = clamp(col, 0.0, 1.0);
-
-  if (uAaPass < 0.5) {
-    if (aaCov < 0.82) discard;
-    gl_FragColor = vec4(col * reveal, reveal);
-  } else {
-    if (aaCov >= 0.82 || aaCov <= 0.02) discard;
-    float a = aaCov * reveal;
-    gl_FragColor = vec4(col * a, a);
-  }
+  gl_FragColor = vec4(col * reveal, reveal);
 }`;
 
 export const GLOW_VERT = `precision highp float;
@@ -972,7 +949,8 @@ void main() {
   vec2 uv = mat2(vRotCS.x, -vRotCS.y, vRotCS.y, vRotCS.x) * q + 0.5;
   if (any(lessThan(uv, vec2(0.003))) || any(greaterThan(uv, vec2(0.997)))) discard;
 
-  float halfTex = max(0.003, (0.5 * exp2(vTileInfo.w)) / max(32.0, uTilePx));
+  float lodScale = exp2(vTileInfo.w);
+  float halfTex = max(0.003, (0.5 * lodScale) / max(32.0, uTilePx));
   vec2 safeUv = clamp(uv, halfTex, 1.0 - halfTex);
   vec2 loc = (vTileInfo.xy + safeUv) / 8.0;
 
@@ -987,9 +965,12 @@ void main() {
   }
 
   float isFlower = step(15.9, vBot.x) * (1.0 - step(31.5, vBot.x));
-  float haloAura = exp(-q2 * 8.5) * smoothstep(0.248, 0.02, q2) * isFlower;
+  float quadPxEst = uTilePx / max(1.0, lodScale);
+  float nearHalo = smoothstep(24.0, 44.0, quadPxEst);
+  float haloBase = max(0.0, 1.0 - q2 * 4.15);
+  float haloAura = haloBase * haloBase * isFlower * nearHalo;
 
-  if (texel.a < 0.015 && haloAura < 0.008) discard;
+  if (texel.a < 0.015 && haloAura < 0.016) discard;
 
   float isBlue = vTileInfo.z;
   vec3 rgb = vec3(0.0);
