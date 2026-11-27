@@ -62,15 +62,18 @@ float starLayer360(float azNorm, float el, float cols, float threshold, float co
   vec2 rVec = vec2(hash21(id + vec2(13.7, 29.1) + phaseShift), hash21(id + vec2(71.3, 19.7) + phaseShift));
   vec2 offs = (rVec - 0.5) * 0.34;
   vec2 fp = gv - offs;
-  float dist = length(fp);
+  float d2 = dot(fp, fp);
+  if (d2 >= 0.1156) return 0.0;
+  float dist = sqrt(d2);
   float cellWin = smoothstep(0.34, 0.08, dist);
   if (cellWin <= 0.001) return 0.0;
-  float d2 = dist * dist;
   float twinkle = 0.54 + 0.46 * sin(uTime * (1.15 + rVec.y * 2.1) + rVec.x * 28.0);
   float core = exp(-d2 * coreK);
   float halo = exp(-d2 * 28.0) * 0.24;
-  float crossRays = exp(-abs(fp.x) * 82.0 - abs(fp.y) * 20.0) + exp(-abs(fp.y) * 82.0 - abs(fp.x) * 20.0);
-  float starVal = (core + halo + crossRays * sparkleWeight * 0.48) * cellWin;
+  float crossRays = sparkleWeight > 0.01
+    ? (exp(-abs(fp.x) * 82.0 - abs(fp.y) * 20.0) + exp(-abs(fp.y) * 82.0 - abs(fp.x) * 20.0)) * (sparkleWeight * 0.48)
+    : 0.0;
+  float starVal = (core + halo + crossRays) * cellWin;
   return starVal * twinkle * (0.65 + 0.50 * rVec.x);
 }
 
@@ -103,9 +106,12 @@ void main() {
   float el = asin(clamp(rayWorld.y, -1.0, 1.0));
   float azNorm = az / 6.2831853 + 0.5;
 
-  float sillEdge = mix(-0.45, vWall - 0.06 + 0.015 * sin(az * 6.0), uSkyFade);
-  float sillMask = (1.0 - smoothstep(sillEdge - 0.14, sillEdge + 0.04, uv.y)) * uSkyFade;
-  col = mix(col, vec3(0.010, 0.012, 0.010), sillMask * 0.85);
+  float sillEdge = -0.45;
+  if (uSkyFade >= 0.001) {
+    sillEdge = mix(-0.45, vWall - 0.06 + 0.015 * sin(az * 6.0), uSkyFade);
+    float sillMask = (1.0 - smoothstep(sillEdge - 0.14, sillEdge + 0.04, uv.y)) * uSkyFade;
+    col = mix(col, vec3(0.010, 0.012, 0.010), sillMask * 0.85);
+  }
 
   // 360-degree seamless twilight aurora ribbons & twinkling spherical stars
   float skyMask = smoothstep(sillEdge - 0.04, sillEdge + 0.14, uv.y) * smoothstep(-0.22, 0.04, el);

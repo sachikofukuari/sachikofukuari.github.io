@@ -98,7 +98,7 @@ export function createLotusScene(canvas, options) {
           stencil: false,
           antialias: false,
           preserveDrawingBuffer: false,
-          powerPreference: "low-power",
+          powerPreference: "default",
         })
       : null;
   const bgGl = skyGl || gl;
@@ -295,7 +295,6 @@ export function createLotusScene(canvas, options) {
 
   let raf = 0;
   let lastNow = 0;
-  let lastSkyNow = 0;
   let widthPx = 0;
   let heightPx = 0;
   let skyWidthPx = 0;
@@ -636,31 +635,22 @@ export function createLotusScene(canvas, options) {
         skyCanvas.height = skyHeightPx = sH;
         skyGl.viewport(0, 0, skyWidthPx, skyHeightPx);
       }
-      if (
-        skyResized ||
-        lastSkyNow === 0 ||
-        (animating && now - lastSkyNow >= 32) ||
-        (pointerActive && now - lastSkyNow >= 32) ||
-        now - lastSkyNow >= 50
-      ) {
-        lastSkyNow = now;
-        skyGl.disable(skyGl.DEPTH_TEST);
-        skyGl.disable(skyGl.CULL_FACE);
-        skyGl.disable(skyGl.BLEND);
-        skyGl.useProgram(bgProg);
-        skyGl.bindBuffer(skyGl.ARRAY_BUFFER, bgQuadBuf);
-        skyGl.enableVertexAttribArray(bgPosLoc);
-        skyGl.vertexAttribPointer(bgPosLoc, 2, skyGl.FLOAT, false, 0, 0);
-        skyGl.uniform1f(bgUniforms.uTime, tClock);
-        skyGl.uniform1f(bgUniforms.uAspect, skyWidthPx / skyHeightPx);
-        skyGl.uniform1f(bgUniforms.uFocal, focal);
-        skyGl.uniformMatrix3fv(bgUniforms.uViewMat, false, viewMat);
-        skyGl.uniform2f(bgUniforms.uAim, ax, ay);
-        skyGl.uniform1f(bgUniforms.uSettle, settleMix);
-        skyGl.uniform1f(bgUniforms.uSkyFade, skyFade);
-        skyGl.drawArrays(skyGl.TRIANGLES, 0, 3);
-        skyGl.disableVertexAttribArray(bgPosLoc);
-      }
+      skyGl.disable(skyGl.DEPTH_TEST);
+      skyGl.disable(skyGl.CULL_FACE);
+      skyGl.disable(skyGl.BLEND);
+      skyGl.useProgram(bgProg);
+      skyGl.bindBuffer(skyGl.ARRAY_BUFFER, bgQuadBuf);
+      skyGl.enableVertexAttribArray(bgPosLoc);
+      skyGl.vertexAttribPointer(bgPosLoc, 2, skyGl.FLOAT, false, 0, 0);
+      skyGl.uniform1f(bgUniforms.uTime, tClock);
+      skyGl.uniform1f(bgUniforms.uAspect, skyWidthPx / skyHeightPx);
+      skyGl.uniform1f(bgUniforms.uFocal, focal);
+      skyGl.uniformMatrix3fv(bgUniforms.uViewMat, false, viewMat);
+      skyGl.uniform2f(bgUniforms.uAim, ax, ay);
+      skyGl.uniform1f(bgUniforms.uSettle, settleMix);
+      skyGl.uniform1f(bgUniforms.uSkyFade, skyFade);
+      skyGl.drawArrays(skyGl.TRIANGLES, 0, 3);
+      skyGl.disableVertexAttribArray(bgPosLoc);
 
       gl.disable(gl.DEPTH_TEST);
       gl.disable(gl.CULL_FACE);
