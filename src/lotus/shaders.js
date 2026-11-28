@@ -664,6 +664,7 @@ uniform mat3 uViewMat;
 uniform vec4 uLens;
 uniform vec4 uAction;   // x: time, y: bloom, z: flyMix, w: mouseActive
 uniform vec3 uState;    // x: settle, y: aspect, z: diveMix
+uniform vec2 uClose;    // x: closeTossTime (sec), y: closeTossAmp (0..1)
 uniform vec2 uAim;
 uniform vec2 uOverlay;
 uniform float uTilePx;
@@ -674,6 +675,35 @@ varying vec2 vQuad;
 varying vec2 vRotCS;
 varying vec2 vDepthFx;
 varying vec4 vTileInfo;
+
+float smoother5(float e0, float e1, float x) {
+  float u = clamp((x - e0) / max(0.0001, e1 - e0), 0.0, 1.0);
+  return u * u * u * (u * (u * 6.0 - 15.0) + 10.0);
+}
+
+vec3 evalLanderPetalSurf(
+  float u, float v, float lRingNorm, float lLen, float lMaxW,
+  float lTilt, float lCa, float lSa, float rbL, float lScale,
+  float lAnchorY, float settle
+) {
+  float uS = max(0.0001, u);
+  float lAlong = u * lLen * (1.0 - 0.08 * rbL);
+  float lBaseO = mix(0.48, 0.36, lRingNorm);
+  float lBaseYO = mix(0.18, 0.38, lRingNorm);
+  float lBelly = sin(u * 3.14159265) * mix(0.34, 0.18, lRingNorm);
+  float lTipLift = pow(uS, 2.1) * mix(0.42, 0.30, lRingNorm);
+  float lWOpen = (0.62 * pow(max(0.0, 1.0 - u), 1.75) + sin(pow(uS, 0.68) * 3.14159265)) * (1.0 - 0.10 * u * u);
+  float lSpoon = mix(0.11, 0.065, lRingNorm) * lWOpen * (1.0 - v * v);
+  float lShingle = v * lWOpen * (0.078 + 0.018 * rbL);
+  float lROpen = lBaseO + sin(lTilt) * lAlong + cos(lTilt) * (lBelly + lSpoon + lShingle);
+  float lYOpen = lBaseYO + cos(lTilt) * lAlong - sin(lTilt) * (lBelly + lSpoon + lShingle) + lTipLift;
+  float lTang = v * lWOpen * (lMaxW * 0.5) * (1.22 + 0.16 * rbL) * rbL;
+  return vec3(
+    (lROpen * lCa - lTang * lSa) * lScale,
+    lAnchorY + (lYOpen + settle * 0.04 * u) * lScale,
+    8.5 + (lROpen * lSa + lTang * lCa) * lScale
+  );
+}
 
 void main() {
   float t = uAction.x;
@@ -703,6 +733,8 @@ void main() {
   float spriteRot = ang * 0.35;
   float scatterGlow = 0.0;
   float landedAmt = 0.0;
+  vec3 landNormal = vec3(0.0, 1.0, 0.0);
+  float closeHang = 0.0;
 
   float dive = uState.z;
   if (isHeart > 0.5) {
@@ -743,82 +775,144 @@ void main() {
       float isLander = step(9.5, aExtra.w) * blossom * (1.0 - dust);
 
       if (isLander > 0.5) {
-        // 3-ring petal lander decoding: 10 + ringIdx*100 + round(u*50) + (v*0.5 + 0.5)
+        // Literal 3D petal + stamen-dome lander decoding: 10 + ringIdx*100 + round(u*50) + (v*0.45 + 0.5)
         float rawCode = aExtra.w - 10.0;
-        float lRingIdx = clamp(floor(rawCode / 100.0 + 0.001), 0.0, 2.0);
-        float lRingNorm = lRingIdx * 0.5;
+        float lRingIdx = clamp(floor(rawCode / 100.0 + 0.001), 0.0, 3.0);
         float uCode = rawCode - lRingIdx * 100.0;
         float uLand = floor(uCode + 0.001) / 50.0;
-        float vLand = clamp((fract(uCode) - 0.5) * 2.0, -0.56, 0.56);
+        float vLand = clamp((fract(uCode) - 0.5) / 0.45, -0.90, 0.90);
         float lPetalAz = aExtra.y;
+        float nOff = 0.11 + fract(seed * 19.73) * 0.06;
 
-        float rbL = smoothstep(lRingNorm * 0.18, lRingNorm * 0.18 + 0.78, bloom);
-        float isMid = step(0.5, lRingIdx) * (1.0 - step(1.5, lRingIdx));
-        float isIn = step(1.5, lRingIdx);
-        float lLen = mix(mix(3.65, 3.40, isMid), 3.12, isIn);
-        float lMaxW = mix(mix(1.92, 1.76, isMid), 1.56, isIn);
-        float lBreath = sin(t * 0.85 + lPetalAz * 2.0 + uLand) * mix(0.008, 0.020, rbL);
-        float lTilt = mix(1.24, 0.76, lRingNorm) + lBreath + dive * 0.04 * (1.0 - lRingNorm * 0.3);
-        float lAlong = uLand * lLen * (1.0 - 0.08 * rbL);
-        float lBaseO = mix(0.48, 0.36, lRingNorm);
-        float lBaseYO = mix(0.18, 0.38, lRingNorm);
-        float lBelly = sin(uLand * 3.14159265) * mix(0.34, 0.18, lRingNorm);
-        float lTipLift = pow(uLand, 2.1) * mix(0.42, 0.30, lRingNorm);
-        float lWOpen = (0.62 * pow(1.0 - uLand, 1.75) + sin(pow(uLand, 0.68) * 3.14159265)) * (1.0 - 0.10 * uLand * uLand);
-        float lSpoon = mix(0.11, 0.065, lRingNorm) * lWOpen * (1.0 - vLand * vLand);
-        float lShingle = vLand * lWOpen * (0.078 + 0.018 * rbL);
-        float lROpen = lBaseO + sin(lTilt) * lAlong + cos(lTilt) * (lBelly + lSpoon + lShingle);
-        float lYOpen = lBaseYO + cos(lTilt) * lAlong - sin(lTilt) * (lBelly + lSpoon + lShingle) + lTipLift;
-        float lTang = vLand * lWOpen * (lMaxW * 0.5) * (1.22 + 0.16 * rbL) * rbL;
+        float landX;
+        float landY;
+        float landZ;
         float lCa = cos(lPetalAz);
         float lSa = sin(lPetalAz);
-        float lScale = 1.0 + rbL * 0.40 + settle * 0.08;
-        float lAnchorY = 0.42 + smoothstep(0.0, 1.0, bloom) * 2.10;
+        float closeAmp = uClose.y;
+        float landBloom = mix(bloom, 1.0, closeAmp);
+        float landSettle = mix(settle, 1.0, closeAmp);
+        float landDive = mix(dive, 1.0, closeAmp);
 
-        float landX = (lROpen * lCa - lTang * lSa) * lScale - cos(lTilt) * lCa * 0.15;
-        float landY = lAnchorY + (lYOpen + settle * 0.04 * uLand) * lScale + sin(lTilt) * 0.15;
-        float landZ = 8.5 + (lROpen * lSa + lTang * lCa) * lScale - cos(lTilt) * lSa * 0.15;
+        if (lRingIdx > 2.5) {
+          float rbD = smoothstep(0.18, 0.82, landBloom);
+          float dScale = mix(0.35, 1.0, rbD);
+          float lScale = 1.0 + smoothstep(0.0, 0.92, landBloom) * 0.40 + landSettle * 0.08;
+          float lAnchorY = 0.42 + smoothstep(0.0, 1.0, landBloom) * 2.10;
+          float dR = (uLand <= 0.68
+            ? sin((uLand / 0.68) * 1.5707963) * 0.76
+            : mix(0.76, 1.26, (uLand - 0.68) / 0.32)) * dScale;
+          float dY = uLand <= 0.68
+            ? 0.52 + mix(0.82, -0.08, pow(max(0.0001, uLand), 1.45)) * dScale + 0.010 * sin(t * 0.9 + uLand * 3.0)
+            : (0.56 + 0.76 + 0.12 * ((uLand - 0.68) / 0.32)) * mix(0.45, 1.0, rbD);
+          landX = lCa * dR * lScale;
+          landY = lAnchorY + (dY + nOff) * lScale;
+          landZ = 8.5 + lSa * dR * lScale;
+        } else {
+          float lRingNorm = lRingIdx * 0.5;
+          float rbL = smoothstep(lRingNorm * 0.18, lRingNorm * 0.18 + 0.78, landBloom);
+          float isMid = step(0.5, lRingIdx) * (1.0 - step(1.5, lRingIdx));
+          float isIn = step(1.5, lRingIdx);
+          float lLen = mix(mix(3.65, 3.40, isMid), 3.12, isIn);
+          float lMaxW = mix(mix(1.92, 1.76, isMid), 1.56, isIn);
+          float lBreath = sin(t * 0.85 + lPetalAz * 2.0 + uLand) * mix(0.008, 0.020, rbL);
+          float lTilt = mix(1.24, 0.76, lRingNorm) + lBreath + landDive * 0.04 * (1.0 - lRingNorm * 0.3);
+          float lScale = 1.0 + rbL * 0.40 + landSettle * 0.08;
+          float lAnchorY = 0.42 + smoothstep(0.0, 1.0, landBloom) * 2.10;
 
-        float pOpen = smoothstep(0.22, 0.92, bloom);
+          vec3 p0 = evalLanderPetalSurf(uLand, vLand, lRingNorm, lLen, lMaxW, lTilt, lCa, lSa, rbL, lScale, lAnchorY, landSettle);
+          vec3 pU = evalLanderPetalSurf(min(0.99, uLand + 0.015), vLand, lRingNorm, lLen, lMaxW, lTilt, lCa, lSa, rbL, lScale, lAnchorY, landSettle);
+          vec3 pV = evalLanderPetalSurf(uLand, min(0.99, vLand + 0.015), lRingNorm, lLen, lMaxW, lTilt, lCa, lSa, rbL, lScale, lAnchorY, landSettle);
+          vec3 nSurf = cross(pV - p0, pU - p0);
+          if (dot(nSurf, nSurf) < 1e-8) {
+            landNormal = vec3(-cos(lTilt) * lCa, sin(lTilt), -cos(lTilt) * lSa);
+          } else {
+            if (nSurf.y < 0.0) nSurf = -nSurf;
+            landNormal = normalize(nSurf);
+          }
+          vec3 landPos = p0 + landNormal * nOff;
+          landX = landPos.x;
+          landY = landPos.y;
+          landZ = landPos.z;
+        }
+
+        float drag = fract(seed * 13.37);
         float flyAbove = max(0.0, fly - 0.22 * settle);
-        float softAir = (flyAbove * flyAbove) / (flyAbove + 0.16);
-        landedAmt = smoothstep(0.08, 0.90, settle) * (1.0 - smoothstep(0.01, 0.28, flyAbove));
+        float touchCutoff = mix(0.085, 0.0, drag) * smoothstep(0.05, 0.45, settle);
+        float effAir = max(0.0, flyAbove - touchCutoff) / max(0.25, 1.0 - touchCutoff);
+        float airCurve = clamp(((effAir / 0.76) * (effAir / (effAir + 0.09))) / 0.894, 0.0, 1.0);
+        landedAmt = smoothstep(0.06, 0.88, settle) * (1.0 - smoothstep(0.005, 0.24, effAir));
 
-        float swirlAmt = softAir * liftWeight;
+        float petalHold = smoothstep(0.02, 0.86, settle * (0.86 + 0.14 * drag));
         float calmWind = 1.0 - landedAmt;
-        float releaseArch = sin(pOpen * 3.14159265) * (1.0 - settle) * (1.0 - smoothstep(0.25, 0.65, fly));
         float windY = flex * (0.26 * cos(t * 1.05 - aBase.z * 0.26 + aBase.x * 0.30) - 0.15 * gust * gust);
-        float baseX = mix(aBase.x + (gust * flex + 0.02 * sin(t * 1.65 + ang)) * calmWind, landX, pOpen) + lCa * releaseArch * 1.15;
-        float baseZ = mix(aBase.z, landZ, pOpen) + lSa * releaseArch * 1.15;
-        float baseY = mix(aBase.y + windY * calmWind, landY, pOpen) + releaseArch * 0.65;
-        x = baseX + cos(radialAngle + t * 0.12) * swirlAmt * 0.75;
-        z = baseZ + sin(radialAngle + t * 0.10) * swirlAmt * 0.22;
-        y = baseY + swirlAmt * (3.2 + seed * 1.3);
-        scatterGlow = softAir * 0.72;
+        float restX = mix(aBase.x + (gust * flex + 0.02 * sin(t * 1.65 + ang)) * calmWind, landX, petalHold);
+        float restZ = mix(aBase.z, landZ, petalHold);
+        float restY = mix(aBase.y + windY * calmWind, landY, petalHold);
+
+        // Launch from grass at the exact same cloud height as the surrounding flowerbed, clearing target petal before landing
+        float natPeakY = aBase.y + 0.76 * 2.73 * liftWeight * (1.05 + seed * 1.15);
+        float peakY = max(natPeakY, landY + 0.35 + drag * 0.55);
+        float swirlAng = radialAngle + 0.35 * sin(t * 0.35 + seed * 6.283);
+        float airRise = airCurve * 0.76 * 2.73 * liftWeight * (1.0 - landedAmt);
+        x = restX + cos(swirlAng) * airRise * 0.65;
+        z = restZ + sin(swirlAng) * airRise * 0.22;
+        y = mix(restY, peakY, airCurve);
+        scatterGlow = airCurve * 0.72;
+
+        if (closeAmp > 0.001) {
+          float tc = uClose.x;
+          float tRise = 0.78 + drag * 0.24;
+          float tFallStart = tRise + 0.18 + drag * 0.22;
+          float tEnd = 3.55 + drag * 0.95;
+          float upP = smoother5(0.0, tRise, tc);
+          float downP = smoother5(tFallStart, tEnd, tc);
+          float hangEnv = upP * (1.0 - downP);
+
+          float apexY = landY + 1.25 + drag * 1.15;
+          float hangBob = (0.10 * sin(t * 2.0 + seed * 14.0) + 0.06 * cos(t * 1.3 + radialAngle * 2.0)) * hangEnv;
+          float windX = gust * flex + 0.02 * sin(t * 1.65 + ang);
+          float swirlC = radialAngle + 0.45 * sin(t * 0.42 + seed * 6.283);
+          float burstR = (0.45 + drag * 0.65) * hangEnv;
+
+          float xClose = mix(landX, aBase.x + windX, downP) + cos(swirlC) * burstR + 0.18 * sin(t * 1.1 + seed * 19.0) * hangEnv;
+          float zClose = mix(landZ, aBase.z, downP) + sin(swirlC) * burstR * 0.55;
+          float yClose = mix(mix(landY, apexY, upP), aBase.y + windY, downP) + hangBob;
+
+          x = mix(x, xClose, closeAmp);
+          y = mix(y, yClose, closeAmp);
+          z = mix(z, zClose, closeAmp);
+          landedAmt = mix(landedAmt, 1.0 - smoothstep(0.0, 0.30, upP), closeAmp);
+          scatterGlow = mix(scatterGlow, hangEnv * 0.62, closeAmp);
+          closeHang = hangEnv * closeAmp * (0.65 + drag * 0.55);
+        }
       } else {
         float frontMask = smoothstep(0.8, 2.6, aBase.z) * (1.0 - smoothstep(4.5, 8.2, aBase.z));
         float launchPart = smoothstep(0.0, 0.42, max(0.0, fly - 0.22 * settle));
         float centerCorridor = exp(-aBase.x * aBase.x * 0.35) * frontMask * launchPart;
         float partDir = (aBase.x + (seed - 0.5) * 0.18) >= 0.0 ? 1.0 : -1.0;
-        float hoverBob = settle * (0.14 * sin(t * 0.85 + radialAngle * 2.0) + 0.08 * cos(t * 0.55 + seed * 12.0));
-        float rise = (fly * (0.28 + blossom * 2.45) + hoverBob * (0.35 + blossom * 0.65)) * liftWeight;
+
+        float rBase = length(vec2(aBase.x, aBase.z - 8.5));
+        // Exact lotus-underside clearance ceiling (0.83..1.72 units below outer petal underside out to r = 8.0),
+        // driven only by bloom so Intro (bloom = 0) is 100% untouched and landing has zero end-of-fall jerk.
+        float underMask = (1.0 - smoothstep(6.2, 8.0, rBase)) * smoothstep(0.08, 0.78, bloom) * (1.0 - dust);
+        float hoverBob = settle * (0.14 * sin(t * 0.85 + radialAngle * 2.0) + 0.08 * cos(t * 0.55 + seed * 12.0)) * (1.0 - underMask * 0.85);
+        float grassDamp = mix(1.0 - underMask * 0.80, 1.0, max(blossom, dust));
+        float rise = (fly * (0.28 + blossom * 2.45) + hoverBob * (0.35 + blossom * 0.65)) * liftWeight * grassDamp;
         float yLiftMult = (1.05 + seed * 1.15) * (1.0 - centerCorridor * 0.55);
 
-        // Tuck resting baseline gently beneath the open lotus bowl during launch (driven only by bloom),
-        // so the fall curve itself decelerates monotonically to the ground with ZERO end-of-fall jerk.
-        float rBase = length(vec2(aBase.x, aBase.z - 8.5));
-        float underMask = (1.0 - smoothstep(4.8, 7.2, rBase)) * smoothstep(0.10, 0.85, bloom);
-        float uApprox = clamp((rBase - 0.9) / 4.6, 0.0, 1.0);
+        float uApprox = clamp((rBase - 0.7) / 4.9, 0.0, 1.0);
         float lotusFloorY = 0.42 + smoothstep(0.0, 1.0, bloom) * 2.10;
-        float restLiftY = (0.22 * (0.28 + blossom * 2.45)) * liftWeight * (1.05 + seed * 1.15);
-        float underCeil = lotusFloorY - 0.56 + uApprox * uApprox * 1.56 - restLiftY;
+        float restLiftY = (0.22 * (0.28 + blossom * 2.45)) * liftWeight * grassDamp * (1.05 + seed * 1.15);
+        float underCeil = lotusFloorY - 0.82 + uApprox * uApprox * 1.55 - restLiftY;
         float diffU = underCeil - y;
         float smoothMinY = underCeil - 0.5 * (diffU + sqrt(diffU * diffU + 0.36));
         y = mix(y, smoothMinY, underMask);
 
-        x += cos(radialAngle + t * 0.12) * rise * 0.65 + partDir * fly * blossom * centerCorridor * (1.25 + seed * 0.55);
+        float swirlAng = radialAngle + 0.35 * sin(t * 0.35 + seed * 6.283);
+        x += cos(swirlAng) * rise * 0.65 + partDir * fly * blossom * centerCorridor * (1.25 + seed * 0.55);
         y += rise * yLiftMult;
-        z += sin(radialAngle + t * 0.10) * rise * 0.18 * (1.0 - frontMask * 0.85);
+        z += sin(swirlAng) * rise * 0.22 * (1.0 - frontMask * 0.85);
         scatterGlow = fly * blossom * 0.72 * (1.0 - settle * 0.55);
       }
     } else {
@@ -826,7 +920,7 @@ void main() {
       opacity = 1.0 - smoothstep(0.15, 0.75, bloom);
     }
 
-    spriteRot = ang * 0.28 + gust * mix(0.048, 0.12, blossom) + sin(t * 1.1 + ang) * 0.02 + fly * 0.52;
+    spriteRot = ang * 0.28 + gust * mix(0.048, 0.12, blossom) + sin(t * 1.1 + ang) * 0.02 + fly * 0.52 + closeHang;
     if (landedAmt > 0.001) {
       spriteRot = mix(spriteRot, aExtra.y * 0.65 + seed * 6.28318 + sin(t * 0.85 + aExtra.y * 2.0) * 0.03, landedAmt);
     }
@@ -857,13 +951,26 @@ void main() {
   push.x /= uLens.y;
   p += push;
 
-  float zn = ((dep - 0.35) / 78.0) * 2.0 - 1.0;
-
   float sizePx = (ptSize * uLens.z * uLens.x * 0.5) / max(0.65, dep);
-  float flyShrink = 1.0 - fly * blossom * (1.0 - isHeart) * 0.22;
-  float landerScale = mix(0.48, 0.72, fract(seed * 7.13));
-  float finalPtSize = sizePx * flyShrink * mix(1.0, landerScale, landedAmt);
-  float quadPx = clamp(finalPtSize, 1.0, uLens.w);
+  float quadPx = clamp(sizePx, 1.0, uLens.w);
+
+  float depDepth = dep;
+  if (landedAmt > 0.001) {
+    float worldSpan = (2.0 * quadPx * dep) / max(1.0, uLens.z * uLens.x);
+    vec3 nView = uViewMat * landNormal;
+    float vLen = max(1.0, length(view));
+    float denom0 = dot(nView, view);
+    float ndotv = denom0 / vLen;
+    float facing = smoothstep(0.02, -0.06, ndotv);
+    float backMask = smoothstep(-0.02, 0.08, ndotv);
+    vec3 cornerRay = vec3(view.x + aCorner.x * worldSpan, view.y + aCorner.y * worldSpan, dep);
+    float dc = dot(nView, cornerRay);
+    float sPlane = denom0 / min(-0.35, dc);
+    float planeDep = clamp(dep * sPlane, dep - worldSpan * 1.15, dep + worldSpan * 0.55) - 0.18;
+    float targetDep = mix(dep + worldSpan * 0.45 * backMask, planeDep, facing);
+    depDepth = mix(dep, targetDep, landedAmt);
+  }
+  float zn = ((depDepth - 0.35) / 78.0) * 2.0 - 1.0;
 
   vec2 quadHalfNdc = vec2(quadPx / max(1.0, uLens.z * uLens.y), quadPx / max(1.0, uLens.z));
   vec2 clipPos = p + aCorner * 2.0 * quadHalfNdc * dep;

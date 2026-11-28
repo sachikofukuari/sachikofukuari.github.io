@@ -40,6 +40,9 @@ export function createLotusScene(canvas, options) {
   let flyStage1 = flyTarget;
   let flyMix = flyTarget;
   let fallElapsed = opts.initialOpen ? 10 : 0;
+  let exitElapsed = 0;
+  let closeTossAmp = 0;
+  let closeTossTime = 0;
 
   const reducedMotionMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -434,6 +437,7 @@ export function createLotusScene(canvas, options) {
     uLens: gl.getUniformLocation(pvProg, "uLens"),
     uAction: gl.getUniformLocation(pvProg, "uAction"),
     uState: gl.getUniformLocation(pvProg, "uState"),
+    uClose: gl.getUniformLocation(pvProg, "uClose"),
     uAim: gl.getUniformLocation(pvProg, "uAim"),
     uOverlay: gl.getUniformLocation(pvProg, "uOverlay"),
     uTilePx: gl.getUniformLocation(pvProg, "uTilePx"),
@@ -471,6 +475,7 @@ export function createLotusScene(canvas, options) {
     if (pendingFlyDown && bloomTarget === 1) {
       pendingFlyDown = false;
       fallElapsed = 0;
+      exitElapsed = 0;
       flyTarget = 0.22;
       settleTarget = 1;
     }
@@ -493,7 +498,8 @@ export function createLotusScene(canvas, options) {
       Math.abs(flyTarget - flyMix) > 0.0025 ||
       Math.abs(diveTarget - diveMix) > 0.003 ||
       Math.abs(settleTarget - settleMix) > 0.003 ||
-      Math.abs(tabYawTarget - tabYawMix) > 0.003;
+      Math.abs(tabYawTarget - tabYawMix) > 0.003 ||
+      closeTossAmp > 0.002;
 
     const pointerActive = now - lastPointerMoveMs < 550;
     const settledOpen = settleMix > 0.96 && diveMix > 0.96 && bloomTarget === 1 && !animating;
@@ -519,9 +525,14 @@ export function createLotusScene(canvas, options) {
       if (frameTicks === 5) document.body.dataset.animStarted = "1";
     }
 
-    const bloomRate = bloomTarget > bloomMix ? 2.15 : 1.25;
+    if (!paused && !isReduced && bloomTarget === 0 && (bloomMix > 0.003 || settleMix > 0.003 || flyMix > 0.0025)) {
+      exitElapsed += dt;
+    }
+    const eT = Math.max(0, Math.min(1, exitElapsed / 1.85));
+    const exitRamp = eT * eT * (3 - 2 * eT);
+    const bloomRate = bloomTarget > bloomMix ? 2.15 : 0.65 + 0.65 * exitRamp;
     const bloomEase = isReduced ? 1 : 1 - Math.exp(-dt * bloomRate);
-    const diveRate = diveTarget > diveMix ? 1.55 : 1.40;
+    const diveRate = diveTarget > diveMix ? 1.55 : 1.25;
     const diveEase = isReduced ? 1 : 1 - Math.exp(-dt * diveRate);
     const fastEase = isReduced ? 1 : 1 - Math.exp(-dt * 5.0);
     const tabEase = isReduced ? 1 : 1 - Math.exp(-dt * 3.4);
@@ -533,15 +544,16 @@ export function createLotusScene(canvas, options) {
     const nearGround = Math.max(0, Math.min(1, (flyMix - flyTarget) / 0.34));
     const groundCushion = 0.61 + 0.53 * nearGround;
     const fallRate = 0.28 + (groundCushion - 0.28) * fallRamp;
-    const flyRate = flyTarget > flyStage0 ? 4.4 : flyTarget > 0.05 ? fallRate : 3.6;
+    const exitFlyRate = 0.68 + 1.25 * exitRamp;
+    const flyRate = flyTarget > flyStage0 ? 4.4 : flyTarget > 0.05 ? fallRate : exitFlyRate;
     const flyEase = isReduced ? 1 : 1 - Math.exp(-dt * flyRate);
-    const settleRate = settleTarget > settleMix ? 0.10 + 0.61 * fallRamp : 1.55;
+    const settleRate = settleTarget > settleMix ? 0.10 + 0.61 * fallRamp : 0.55 + 0.75 * exitRamp;
 
     if (!paused) {
       if (!isReduced) tClock += dt;
       bloomMix += (bloomTarget - bloomMix) * bloomEase;
       if (!isReduced && bloomTarget < bloomMix) {
-        bloomMix = Math.max(bloomTarget, bloomMix - dt * 0.22);
+        bloomMix = Math.max(bloomTarget, bloomMix - dt * (0.04 + 0.08 * exitRamp));
       }
       diveMix += (diveTarget - diveMix) * diveEase;
       settleMix += (settleTarget - settleMix) * (isReduced ? 1 : 1 - Math.exp(-dt * settleRate));
@@ -550,6 +562,23 @@ export function createLotusScene(canvas, options) {
       flyStage0 += (flyTarget - flyStage0) * flyEase;
       flyStage1 += (flyStage0 - flyStage1) * flyEase;
       flyMix += (flyStage1 - flyMix) * flyEase;
+
+      if (isReduced) {
+        closeTossAmp = 0;
+        closeTossTime = 0;
+      } else if (bloomTarget === 0 && closeTossAmp > 0.002) {
+        closeTossTime += dt;
+        if (closeTossTime >= 4.6) {
+          closeTossAmp = 0;
+        }
+      } else if (bloomTarget === 1 && closeTossAmp > 0.0005) {
+        closeTossAmp *= Math.exp(-dt * 4.5);
+        closeTossTime += dt;
+        if (closeTossAmp < 0.001) {
+          closeTossAmp = 0;
+          closeTossTime = 0;
+        }
+      }
 
       ax += (mx - ax) * fastEase;
       ay += (my - ay) * fastEase;
@@ -751,6 +780,7 @@ export function createLotusScene(canvas, options) {
       gl.uniform4f(pvUniforms.uLens, focal, aspect, heightPx, maxPointSize);
       gl.uniform4f(pvUniforms.uAction, tClock, bloomMix, flyMix, isReduced ? 0 : mouseSmooth);
       gl.uniform3f(pvUniforms.uState, settleMix, aspect, dCurve);
+      gl.uniform2f(pvUniforms.uClose, closeTossTime, closeTossAmp);
       gl.uniform2f(pvUniforms.uAim, ax, ay);
       gl.uniform2f(pvUniforms.uOverlay, overlayAlpha, overlayMode);
       gl.uniform1f(pvUniforms.uTilePx, atlasTileSize);
@@ -1023,6 +1053,7 @@ export function createLotusScene(canvas, options) {
       flyDownTimer = 0;
       pendingFlyDown = false;
       fallElapsed = 0;
+      exitElapsed = 0;
       if (open) {
         bloomTarget = 1;
         diveTarget = 1;
@@ -1037,6 +1068,12 @@ export function createLotusScene(canvas, options) {
           }
         }, 2300);
       } else {
+        const sClamp = Math.max(0, Math.min(1, (settleMix - 0.65) / 0.30));
+        const tossStart = sClamp * sClamp * (3 - 2 * sClamp);
+        if (tossStart > 0.01) {
+          closeTossAmp = tossStart;
+          closeTossTime = 0;
+        }
         bloomTarget = 0;
         diveTarget = 0;
         settleTarget = 0;

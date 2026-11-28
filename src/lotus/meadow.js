@@ -1,6 +1,6 @@
 /**
  * Builds the 3D valley/360 meadow foliage & wildflower particle clouds,
- * stamen pollen glints, ambient dust/fireflies, 100 petal-landing wildflowers,
+ * stamen pollen glints, ambient dust/fireflies, literal 24-petal + stamen landers,
  * and packs typed arrays for O(N) camera-depth radix sorting.
  */
 import {
@@ -19,71 +19,86 @@ import {
 const S = Math.sin;
 const C = Math.cos;
 
-function generatePetalLanderSlots(R) {
-  const slots = [];
-  const outerCoords = [
-    [0.48, -0.30],
-    [0.56, 0.28],
-    [0.68, -0.20],
-    [0.76, 0.24],
-    [0.87, -0.02],
-  ];
-  const midCoords = [
-    [0.52, -0.26],
-    [0.63, 0.26],
-    [0.75, -0.16],
-    [0.86, 0.14],
-  ];
-  const innerCoords = [
-    [0.66, -0.26],
-    [0.76, 0.24],
-    [0.87, -0.06],
-    [0.72, 0.02],
-  ];
+function evalPetalOpenWorld(tier, u, v, az) {
+  const ringNorm = tier.ringNorm;
+  const openTilt = 1.24 - ringNorm * 0.48 + 0.04 * (1 - ringNorm * 0.3);
+  const along = u * tier.len * 0.92;
+  const baseO = 0.48 - ringNorm * 0.12;
+  const baseYO = 0.18 + ringNorm * 0.20;
+  const bellyArc = S(u * Math.PI) * (0.34 - ringNorm * 0.16);
+  const tipLift = Math.pow(Math.max(0.0001, u), 2.1) * (0.42 - ringNorm * 0.12);
+  const wOpen =
+    (0.62 * Math.pow(1 - u, 1.75) + S(Math.pow(Math.max(0.0001, u), 0.68) * Math.PI)) *
+    (1 - 0.10 * u * u);
+  const spoon = (0.11 - ringNorm * 0.045) * wOpen * (1 - v * v);
+  const shingle = v * wOpen * 0.096;
+  const rOpen = (baseO + S(openTilt) * along + C(openTilt) * (bellyArc + spoon + shingle)) * 1.48;
+  const yOpen =
+    2.52 + (baseYO + C(openTilt) * along - S(openTilt) * (bellyArc + spoon + shingle) + tipLift + 0.04 * u) * 1.48;
+  const halfW = wOpen * (tier.maxW * 0.5) * 1.38 * 1.48;
+  return { rOpen, halfW, yOpen };
+}
 
-  let seq = 0;
-  for (let p = 0; p < 8; p++) {
-    const azOut = LOTUS_PETAL_TIERS[0].azOffset + (TAU * p) / 8;
-    for (let j = 0; j < outerCoords.length; j++) {
-      const [u0, v0] = outerCoords[j];
-      const flip = (p + j) % 2 ? 1 : -1;
-      slots.push({
-        ringIdx: 0,
-        az: azOut,
-        u: u0 + (R() - 0.5) * 0.05,
-        v: v0 * flip + (R() - 0.5) * 0.07,
-        wantBlue: seq++ % 3 === 1,
-      });
-    }
-
-    const azMid = LOTUS_PETAL_TIERS[1].azOffset + (TAU * p) / 8;
-    for (let j = 0; j < midCoords.length; j++) {
-      const [u0, v0] = midCoords[j];
-      const flip = (p + j) % 2 ? -1 : 1;
-      slots.push({
-        ringIdx: 1,
-        az: azMid,
-        u: u0 + (R() - 0.5) * 0.05,
-        v: v0 * flip + (R() - 0.5) * 0.07,
-        wantBlue: seq++ % 3 === 2,
-      });
-    }
-
-    const azIn = LOTUS_PETAL_TIERS[2].azOffset + (TAU * p) / 8;
-    const innerCount = p % 2 === 0 ? 4 : 3;
-    for (let j = 0; j < innerCount; j++) {
-      const [u0, v0] = innerCoords[j];
-      const flip = (p + j) % 2 ? 1 : -1;
-      slots.push({
-        ringIdx: 2,
-        az: azIn,
-        u: u0 + (R() - 0.5) * 0.04,
-        v: v0 * flip + (R() - 0.5) * 0.06,
-        wantBlue: seq++ % 3 === 0,
-      });
+function createOpenLotusHitTester() {
+  const petalList = [];
+  for (const tier of LOTUS_PETAL_TIERS) {
+    for (let p = 0; p < tier.count; p++) {
+      const az = tier.azOffset + (TAU * p) / tier.count;
+      petalList.push({ tier, az, ca: C(az), sa: S(az) });
     }
   }
-  return slots;
+
+  return function hitTestOpenLotus(px, pz) {
+    const dx = px - SAKURA_X;
+    const dz = pz - SAKURA_Z;
+    const r = Math.hypot(dx, dz);
+    if (r > 5.75) return null;
+
+    let best = null;
+    for (let pi = 0; pi < petalList.length; pi++) {
+      const pet = petalList[pi];
+      const localR = dx * pet.ca + dz * pet.sa;
+      if (localR < 0.45) continue;
+      const localT = -dx * pet.sa + dz * pet.ca;
+      if (Math.abs(localT) > 1.75) continue;
+
+      let lo = 0.02;
+      let hi = 0.96;
+      for (let it = 0; it < 9; it++) {
+        const mid = 0.5 * (lo + hi);
+        if (evalPetalOpenWorld(pet.tier, mid, 0, pet.az).rOpen < localR) lo = mid;
+        else hi = mid;
+      }
+      const u = 0.5 * (lo + hi);
+      const ev0 = evalPetalOpenWorld(pet.tier, u, 0, pet.az);
+      if (Math.abs(ev0.rOpen - localR) > 0.14 || ev0.halfW < 0.04) continue;
+      const v = localT / ev0.halfW;
+      if (Math.abs(v) > 0.90) continue;
+
+      const ev1 = evalPetalOpenWorld(pet.tier, u, v, pet.az);
+      if (!best || ev1.yOpen > best.y) {
+        best = { ringIdx: pet.tier.ringIdx, az: pet.az, u, v, y: ev1.yOpen };
+      }
+    }
+
+    if (r <= 1.80) {
+      const uDome =
+        r <= 0.76 * 1.48
+          ? (Math.asin(Math.min(1, r / (0.76 * 1.48))) / (Math.PI * 0.5)) * 0.68
+          : 0.68 + ((r / 1.48 - 0.76) / (1.26 - 0.76)) * 0.32;
+      const uClamped = Math.max(0.02, Math.min(0.96, uDome));
+      const yy =
+        uClamped <= 0.68
+          ? 0.52 + (0.82 + (-0.08 - 0.82) * Math.pow(uClamped, 1.45))
+          : 0.56 + 0.76 + 0.12 * ((uClamped - 0.68) / 0.32);
+      const domeY = 2.52 + yy * 1.48;
+      if (!best || domeY > best.y) {
+        best = { ringIdx: 3, az: Math.atan2(dz, dx), u: uClamped, v: 0, y: domeY };
+      }
+    }
+
+    return best;
+  };
 }
 
 export async function buildMeadowData({ lowEnd, R, yieldSlice, useUint32 = true }) {
@@ -571,7 +586,7 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice, useUint32 = true 
     pushParticle(fx, fy, fz, 0.32 + R() * 0.18, 33, R(), 1.0, 0.0, Math.atan2(fz - SAKURA_Z, fx), fz, 0.5 + R() * 0.6, 0.0);
   }
 
-  // 7. Select 100 real wildflowers across the broad meadow to catch & rest organically across all 3 lotus petal rings
+  // 7. Assign literal 3D petal + stamen-dome landing targets for every wildflower directly beneath the open lotus
   await yieldSlice();
   const maxParticles = useUint32 ? 65000 : 16380;
   let sourceParticles = particles;
@@ -596,44 +611,18 @@ export async function buildMeadowData({ lowEnd, R, yieldSlice, useUint32 = true 
     }
   }
   const particleCount = Math.min(maxParticles, sourceParticles.length);
-  const landSlots = generatePetalLanderSlots(R);
-  const assignedLanders = new Set();
+  const hitTestOpenLotus = createOpenLotusHitTester();
 
-  for (let si = 0; si < landSlots.length; si++) {
-    const slot = landSlots[si];
-    const approxR = 2.8 + (si % 6) * 1.15;
-    const azPick = slot.az + ((si % 5) - 2) * 0.16;
-    const tx = SAKURA_X + C(azPick) * approxR;
-    const tz = SAKURA_Z + S(azPick) * approxR;
-    let bestIdx = -1;
-    let bestScore = Infinity;
-    let fallbackIdx = -1;
-    let fallbackScore = Infinity;
-    for (let i = 0; i < particleCount; i++) {
-      if (assignedLanders.has(i)) continue;
-      const pt = sourceParticles[i];
-      const tid = pt[4];
-      if (pt[7] >= 0.5 || tid < 16 || tid >= 32) continue;
-      const d2 = (pt[0] - tx) * (pt[0] - tx) + (pt[2] - tz) * (pt[2] - tz);
-      const isBluePal = (tid - 16) % 8 >= 6;
-      if (isBluePal === slot.wantBlue && d2 < bestScore) {
-        bestScore = d2;
-        bestIdx = i;
-      }
-      if (d2 < fallbackScore) {
-        fallbackScore = d2;
-        fallbackIdx = i;
-      }
-    }
-    const pick = bestIdx !== -1 ? bestIdx : fallbackIdx;
-    if (pick !== -1) {
-      assignedLanders.add(pick);
-      const pt = sourceParticles[pick];
-      const uClamped = Math.max(0.02, Math.min(0.96, slot.u));
-      const vClamped = Math.max(-0.52, Math.min(0.52, slot.v));
-      pt[9] = slot.az;
-      pt[11] = 10.0 + slot.ringIdx * 100.0 + Math.round(uClamped * 50) + (vClamped * 0.5 + 0.5);
-    }
+  for (let i = 0; i < particleCount; i++) {
+    const pt = sourceParticles[i];
+    const tid = pt[4];
+    if (pt[7] >= 0.5 || tid < 16 || tid >= 32) continue;
+    const hit = hitTestOpenLotus(pt[0], pt[2]);
+    if (!hit) continue;
+    const uClamped = Math.max(0.02, Math.min(0.96, hit.u));
+    const vClamped = Math.max(-0.90, Math.min(0.90, hit.v));
+    pt[9] = hit.az;
+    pt[11] = 10.0 + hit.ringIdx * 100.0 + Math.round(uClamped * 50) + (vClamped * 0.45 + 0.5);
   }
 
   // 8. Pack 4-Corner Billboard Quad VBO (stride 56 bytes) & O(N) 256-Bucket Camera-Depth Radix Sort Buffers
