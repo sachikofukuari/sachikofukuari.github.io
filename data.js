@@ -66,7 +66,7 @@ window.PORTFOLIO_DATA = {
     youtubeUrl: "https://youtu.be/6RWCiktXFfI?si=29Jsj7z8XsWH83Zh",
     startAt: "3:00",
     defaultVolume: 50,
-    title: "LK Cứ Trao Đi, Chưa Bao Giờ",
+    title: "Chưa Bao Giờ",
     artist: "Hà Anh Tuấn ft. Thu Phương",
     album: "Sketch a Rose",
     coverImage: "",
@@ -102,7 +102,7 @@ window.PORTFOLIO_DATA = {
     emptyText: "to be updated",
     vi: {
       heading: "Công cụ & Thiết lập",
-      subtitle: "Ứng dụng sáng tạo, công cụ lập trình và thiết bị hàng ngày.",
+      subtitle: "Ứng dụng sáng tạo, công cụ và thiết bị hàng ngày.",
       emptyText: "sẽ cập nhật sau",
       groups: {
         Software: "Phần mềm",
